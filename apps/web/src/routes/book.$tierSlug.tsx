@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -11,7 +11,6 @@ import {
   Clock,
   CreditCard,
   Loader2,
-  MapPin,
   Zap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -38,6 +37,7 @@ import { getSession } from '@/lib/auth-client'
 import { formatCentavos, formatDuration } from '@/lib/format'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { LocationPicker, type PickedLocation } from '@/components/location-picker'
 
 export const Route = createFileRoute('/book/$tierSlug')({
   component: BookingFlow,
@@ -60,23 +60,19 @@ interface FormState {
   bookingMode: BookingMode
   paymentMethod: PaymentMethod
   scheduledAt: string
-  line1: string
+  /** Picked place from the map. Required before advancing past Address. */
+  place: PickedLocation | null
+  /** Free-text unit/floor (not part of the geocoded address). */
   line2: string
-  barangay: string
-  city: string
   notes: string
-  latitude?: number
-  longitude?: number
 }
 
 const initialForm: FormState = {
   bookingMode: 'SCHEDULED',
   paymentMethod: 'ONLINE',
   scheduledAt: '',
-  line1: '',
+  place: null,
   line2: '',
-  barangay: '',
-  city: 'Taguig',
   notes: '',
 }
 
@@ -89,7 +85,6 @@ function BookingFlow() {
   const [stepIndex, setStepIndex] = useState(0)
   const [form, setForm] = useState<FormState>(initialForm)
   const [submitError, setSubmitError] = useState<string | null>(null)
-  const [geoState, setGeoState] = useState<'idle' | 'loading' | 'captured' | 'denied'>('idle')
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -100,34 +95,6 @@ function BookingFlow() {
     return toLocalInputValue(d)
   }, [])
 
-  // When mode flips to ON_DEMAND, auto-grab GPS without making the user click.
-  useEffect(() => {
-    if (form.bookingMode === 'ON_DEMAND' && geoState === 'idle') {
-      requestGeolocation()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.bookingMode])
-
-  function requestGeolocation() {
-    if (!('geolocation' in navigator)) {
-      setGeoState('denied')
-      return
-    }
-    setGeoState('loading')
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setForm((f) => ({
-          ...f,
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        }))
-        setGeoState('captured')
-      },
-      () => setGeoState('denied'),
-      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
-    )
-  }
-
   const canAdvance = (() => {
     if (stepIndex === 0) {
       if (form.bookingMode === 'SCHEDULED') {
@@ -136,7 +103,11 @@ function BookingFlow() {
       }
       return true // ON_DEMAND has no datetime to validate
     }
-    if (stepIndex === 1) return form.line1.trim().length > 0 && form.city.trim().length > 0
+    if (stepIndex === 1) {
+      // Require a picked place with a city — coordinates alone aren't enough
+      // because providers in scheduled mode match by city.
+      return !!form.place && form.place.city.trim().length > 0
+    }
     return true
   })()
 
@@ -149,18 +120,20 @@ function BookingFlow() {
           ? new Date(Date.now() + 15 * 60 * 1000).toISOString() // 15 min from now
           : new Date(form.scheduledAt).toISOString()
 
+      if (!form.place) throw new Error('Please pick a location on the map.')
+
       const booking = await createBooking({
         serviceTierId: tier.id,
         bookingMode: form.bookingMode,
         paymentMethod: form.paymentMethod,
         scheduledAt,
         address: {
-          line1: form.line1.trim(),
+          line1: form.place.line1,
           line2: form.line2.trim() || undefined,
-          barangay: form.barangay.trim() || undefined,
-          city: form.city.trim(),
-          latitude: form.latitude,
-          longitude: form.longitude,
+          barangay: form.place.barangay ?? undefined,
+          city: form.place.city,
+          latitude: form.place.latitude,
+          longitude: form.place.longitude,
         },
         notes: form.notes.trim() || undefined,
       })
@@ -288,52 +261,14 @@ function BookingFlow() {
                 <CardHeader>
                   <CardTitle>Where are we cleaning?</CardTitle>
                   <CardDescription>
-                    Provide an accurate address so providers can find you.
+                    Search, drop a pin on the map, or use your current location.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs text-muted-foreground">
-                      {geoState === 'captured'
-                        ? 'Your location is attached to this booking.'
-                        : 'Sharing your location helps providers find you faster.'}
-                    </p>
-                    <Button
-                      type="button"
-                      variant={geoState === 'captured' ? 'outline' : 'secondary'}
-                      size="sm"
-                      onClick={requestGeolocation}
-                      disabled={geoState === 'loading'}
-                    >
-                      {geoState === 'loading' ? (
-                        <>
-                          <Loader2 className="size-3.5 animate-spin" />
-                          Locating…
-                        </>
-                      ) : geoState === 'captured' ? (
-                        <>
-                          <CheckCircle2 className="size-3.5 text-primary" />
-                          Location set
-                        </>
-                      ) : (
-                        <>
-                          <MapPin className="size-3.5" />
-                          Use my location
-                        </>
-                      )}
-                    </Button>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="line1">Street address</Label>
-                    <Input
-                      id="line1"
-                      autoComplete="address-line1"
-                      placeholder="5 Forbes Park Drive"
-                      value={form.line1}
-                      onChange={(e) => update('line1', e.target.value)}
-                    />
-                  </div>
+                  <LocationPicker
+                    value={form.place}
+                    onChange={(place) => update('place', place)}
+                  />
                   <div className="space-y-2">
                     <Label htmlFor="line2">Unit / floor (optional)</Label>
                     <Input
@@ -343,26 +278,6 @@ function BookingFlow() {
                       value={form.line2}
                       onChange={(e) => update('line2', e.target.value)}
                     />
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="barangay">Barangay</Label>
-                      <Input
-                        id="barangay"
-                        placeholder="Fort Bonifacio"
-                        value={form.barangay}
-                        onChange={(e) => update('barangay', e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="city">City</Label>
-                      <Input
-                        id="city"
-                        autoComplete="address-level2"
-                        value={form.city}
-                        onChange={(e) => update('city', e.target.value)}
-                      />
-                    </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="notes">Notes for the provider (optional)</Label>
@@ -406,13 +321,15 @@ function BookingFlow() {
                     label="Address"
                     value={
                       <span className="text-right">
-                        {form.line1}
+                        {form.place?.line1 ?? '—'}
                         {form.line2 && <>, {form.line2}</>}
                         <br />
-                        {[form.barangay, form.city].filter(Boolean).join(', ')}
-                        {form.latitude !== undefined && (
+                        {[form.place?.barangay, form.place?.city]
+                          .filter(Boolean)
+                          .join(', ')}
+                        {form.place && (
                           <span className="block text-xs text-primary mt-0.5">
-                            📍 Location attached
+                            Pinned on the map
                           </span>
                         )}
                       </span>
