@@ -64,3 +64,18 @@ export const bookingDetailQueryOptions = (id: string) =>
     queryFn: () => api.get<BookingDetail>(`/bookings/${id}`),
     staleTime: 10_000,
   })
+
+export interface ProviderLocation {
+  latitude: number | null
+  longitude: number | null
+  lastLocationAt: string | null
+  distanceKm: number | null
+}
+
+export const providerLocationQueryOptions = (id: string) =>
+  queryOptions({
+    queryKey: ['bookings', id, 'provider-location'] as const,
+    queryFn: () => api.get<ProviderLocation>(`/bookings/${id}/provider-location`),
+    staleTime: 4_000,
+    refetchInterval: 5_000,
+  })

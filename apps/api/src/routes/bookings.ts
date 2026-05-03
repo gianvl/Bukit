@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js'
 import { requireSession } from '../lib/auth-fastify.js'
 import { quoteCancellation } from '../lib/cancellation-policy.js'
 import { refundPayment } from '../lib/paymongo.js'
+import { haversineKm } from '../lib/distance.js'
 
 const BookingStatusEnum = z.enum([
   'PENDING_PAYMENT',
@@ -559,6 +560,91 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
       }
       await prisma.$transaction(ops)
       return { id: full.id, status: 'COMPLETED' as const }
+    },
+  )
+
+  /**
+   * Returns the assigned provider's current location for the customer's map.
+   * Owner-scoped. Coords are null if the provider hasn't shared their location
+   * yet, or if the booking has no assigned provider.
+   *
+   * Frontend polls this every ~5 seconds while the booking is active.
+   */
+  app.get(
+    '/bookings/:id/provider-location',
+    {
+      schema: {
+        params: z.object({ id: z.string().min(1) }),
+        response: {
+          200: z.object({
+            latitude: z.number().nullable(),
+            longitude: z.number().nullable(),
+            lastLocationAt: z.iso.datetime().nullable(),
+            distanceKm: z.number().nullable(),
+          }),
+        },
+      },
+    },
+    async (req) => {
+      const session = requireSession(req)
+      const booking = await prisma.booking.findFirst({
+        where: { id: req.params.id, userId: session.user.id },
+        select: {
+          status: true,
+          latitude: true,
+          longitude: true,
+          providerId: true,
+        },
+      })
+      if (!booking) throw app.httpErrors.notFound('Booking not found')
+
+      const empty = {
+        latitude: null,
+        longitude: null,
+        lastLocationAt: null,
+        distanceKm: null,
+      }
+
+      // Only expose provider location while the job is in flight.
+      if (
+        !booking.providerId ||
+        (booking.status !== 'PROVIDER_ASSIGNED' &&
+          booking.status !== 'EN_ROUTE' &&
+          booking.status !== 'IN_PROGRESS')
+      ) {
+        return empty
+      }
+
+      const provider = await prisma.providerProfile.findUnique({
+        where: { id: booking.providerId },
+        select: {
+          currentLatitude: true,
+          currentLongitude: true,
+          lastLocationAt: true,
+        },
+      })
+      if (
+        !provider ||
+        provider.currentLatitude == null ||
+        provider.currentLongitude == null
+      ) {
+        return empty
+      }
+
+      const distanceKm =
+        booking.latitude != null && booking.longitude != null
+          ? haversineKm(
+              { lat: provider.currentLatitude, lng: provider.currentLongitude },
+              { lat: booking.latitude, lng: booking.longitude },
+            )
+          : null
+
+      return {
+        latitude: provider.currentLatitude,
+        longitude: provider.currentLongitude,
+        lastLocationAt: provider.lastLocationAt?.toISOString() ?? null,
+        distanceKm,
+      }
     },
   )
 

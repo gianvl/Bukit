@@ -25,10 +25,12 @@ import { BookingMap } from '@/components/booking-map'
 import {
   bookingDetailQueryOptions,
   bookingsListQueryOptions,
+  providerLocationQueryOptions,
   type BookingDetail,
   type BookingEventType,
   type BookingStatus,
 } from '@/features/bookings/queries'
+import { Navigation } from 'lucide-react'
 import { BookingStatusBadge, PaymentStatusBadge } from '@/features/bookings/status'
 import {
   Card,
@@ -122,17 +124,7 @@ function BookingDetailPage() {
 
       <CompletionCallout booking={booking} />
 
-      {booking.latitude !== null && booking.longitude !== null && (
-        <BookingMap
-          pins={[
-            {
-              latitude: booking.latitude,
-              longitude: booking.longitude,
-              label: `${booking.addressLine1}, ${booking.city}`,
-            },
-          ]}
-        />
-      )}
+      <BookingMapPanel booking={booking} />
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -279,6 +271,74 @@ function CancelBookingButton({ booking }: { booking: BookingDetail }) {
       </AlertDialogContent>
     </AlertDialog>
   )
+}
+
+const PROVIDER_TRACKING_STATES: BookingStatus[] = [
+  'PROVIDER_ASSIGNED',
+  'EN_ROUTE',
+  'IN_PROGRESS',
+]
+
+function BookingMapPanel({ booking }: { booking: BookingDetail }) {
+  const showProviderPin = PROVIDER_TRACKING_STATES.includes(
+    booking.status as BookingStatus,
+  )
+  const { data: providerLoc } = useQuery({
+    ...providerLocationQueryOptions(booking.id),
+    enabled: showProviderPin,
+  })
+
+  const hasBookingPin = booking.latitude !== null && booking.longitude !== null
+  const hasProviderPin =
+    showProviderPin &&
+    providerLoc?.latitude != null &&
+    providerLoc?.longitude != null
+
+  if (!hasBookingPin && !hasProviderPin) return null
+
+  const pins: Parameters<typeof BookingMap>[0]['pins'] = []
+  if (hasBookingPin) {
+    pins.push({
+      latitude: booking.latitude!,
+      longitude: booking.longitude!,
+      label: `${booking.addressLine1}, ${booking.city}`,
+      tone: 'primary',
+    })
+  }
+  if (hasProviderPin) {
+    pins.push({
+      latitude: providerLoc!.latitude!,
+      longitude: providerLoc!.longitude!,
+      label: 'Your provider',
+      tone: 'accent',
+    })
+  }
+
+  return (
+    <div className="space-y-2">
+      <BookingMap pins={pins} />
+      {showProviderPin && (
+        <p className="text-xs inline-flex items-center gap-2 px-1 text-muted-foreground tabular-nums">
+          <Navigation className="size-3.5 text-amber-500" />
+          {hasProviderPin
+            ? providerLoc!.distanceKm != null
+              ? `Provider is ${providerLoc!.distanceKm!.toFixed(1)} km away · updated ${formatLocationAge(providerLoc!.lastLocationAt)}`
+              : `Provider's location updated ${formatLocationAge(providerLoc!.lastLocationAt)}`
+            : 'Waiting for the provider to share their location…'}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function formatLocationAge(iso: string | null): string {
+  if (!iso) return 'just now'
+  const seconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+  if (seconds < 5) return 'just now'
+  if (seconds < 60) return `${seconds}s ago`
+  const m = Math.floor(seconds / 60)
+  if (m < 60) return `${m}m ago`
+  return `${Math.floor(m / 60)}h ago`
 }
 
 function CompletionCallout({ booking }: { booking: BookingDetail }) {
