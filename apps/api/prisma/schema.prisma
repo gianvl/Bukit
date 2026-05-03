@@ -104,6 +104,7 @@ model User {
   providerProfile ProviderProfile?
   bookings        Booking[]        @relation("BookingsByUser")
   reviews         Review[]         @relation("ReviewsByUser")
+  messages        Message[]
 
   @@index([role])
 }
@@ -241,10 +242,11 @@ model Booking {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  events  BookingEvent[]
-  payment Payment?
-  review  Review?
-  payout  Payout?
+  events   BookingEvent[]
+  payment  Payment?
+  review   Review?
+  payout   Payout?
+  messages Message[]
 
   @@index([userId])
   @@index([providerId])
@@ -301,6 +303,18 @@ model Payout {
 
   @@index([providerId, status])
   @@index([status, createdAt])
+}
+
+model Message {
+  id        String   @id @default(cuid(2))
+  bookingId String
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User     @relation(fields: [senderId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([bookingId, createdAt])
 }
 
 model Review {

@@ -19,6 +19,7 @@ import { bookingRoutes } from './routes/bookings.js'
 import { providerRoutes } from './routes/providers.js'
 import { paymentRoutes } from './routes/payments.js'
 import { webhookRoutes } from './routes/webhooks.js'
+import { messageRoutes } from './routes/messages.js'
 
 export async function buildApp() {
   const app = Fastify({
@@ -59,6 +60,7 @@ export async function buildApp() {
   await app.register(providerRoutes)
   await app.register(paymentRoutes)
   await app.register(webhookRoutes)
+  await app.register(messageRoutes)
 
   return app
 }

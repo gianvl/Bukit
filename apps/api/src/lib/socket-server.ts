@@ -51,6 +51,32 @@ export interface ServerToClientEvents {
     /** User who triggered the change. Lets clients suppress self-toasts. */
     actorUserId: string | null
   }) => void
+  /** New chat message in `booking:{id}` — clients append to the local list. */
+  'chat:message': (data: {
+    bookingId: string
+    message: {
+      id: string
+      senderId: string
+      senderName: string
+      body: string
+      createdAt: string
+    }
+  }) => void
+}
+
+/** Broadcast a new chat message to everyone in a booking's room. */
+export function emitChatMessage(
+  bookingId: string,
+  message: {
+    id: string
+    senderId: string
+    senderName: string
+    body: string
+    createdAt: string
+  },
+): void {
+  if (!ioRef) return
+  ioRef.to(`booking:${bookingId}`).emit('chat:message', { bookingId, message })
 }
 
 /**
