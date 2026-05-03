@@ -224,6 +224,10 @@ model Booking {
   customerCompletedAt     DateTime?
   providerCashConfirmedAt DateTime?
 
+  // Chat read cursors — set when each party marks the thread read.
+  customerChatReadAt DateTime?
+  providerChatReadAt DateTime?
+
   // Address snapshot at booking time
   addressLine1 String
   addressLine2 String?
@@ -306,13 +310,15 @@ model Payout {
 }
 
 model Message {
-  id        String   @id @default(cuid(2))
-  bookingId String
-  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  senderId  String
-  sender    User     @relation(fields: [senderId], references: [id])
-  body      String
-  createdAt DateTime @default(now())
+  id          String    @id @default(cuid(2))
+  bookingId   String
+  booking     Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  senderId    String
+  sender      User      @relation(fields: [senderId], references: [id])
+  body        String
+  createdAt   DateTime  @default(now())
+  /** Set when the recipient's client acks the chat:delivered socket event. */
+  deliveredAt DateTime?
 
   @@index([bookingId, createdAt])
 }

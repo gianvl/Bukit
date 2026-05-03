@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { requireSession } from '../lib/auth-fastify.js'
 import { chatClosesAt, isChatOpen } from '../lib/chat-window.js'
-import { emitChatMessage } from '../lib/socket-server.js'
+import { emitChatMessage, emitChatRead } from '../lib/socket-server.js'
 
 const MessageDto = z.object({
   id: z.string(),
@@ -11,30 +11,39 @@ const MessageDto = z.object({
   senderName: z.string(),
   body: z.string(),
   createdAt: z.iso.datetime(),
+  deliveredAt: z.iso.datetime().nullable(),
 })
 
 const ListResponse = z.object({
   messages: z.array(MessageDto),
-  /** Whether the chat accepts new messages right now. */
   isOpen: z.boolean(),
-  /** When the chat will auto-close (only set during the COMPLETED wind-down). */
   closesAt: z.iso.datetime().nullable(),
+  /** When the calling viewer last read the thread. */
+  myReadAt: z.iso.datetime().nullable(),
+  /** When the other party last read the thread (drives the "Read" indicator). */
+  otherReadAt: z.iso.datetime().nullable(),
 })
 
 const PostBody = z.object({
   body: z.string().min(1).max(2_000).trim(),
 })
 
-/**
- * Loads the booking + its chat-window-relevant timestamps and verifies that
- * the caller is either the customer (booking owner) or the assigned provider's
- * user. Throws an HTTP error otherwise.
- */
+interface AuthorizedBooking {
+  id: string
+  status: import('@prisma/client').BookingStatus
+  customerCompletedAt: Date | null
+  providerCashConfirmedAt: Date | null
+  userId: string
+  customerChatReadAt: Date | null
+  providerChatReadAt: Date | null
+  provider: { userId: string } | null
+}
+
 async function authorizeChatAccess(
   app: import('fastify').FastifyInstance,
   bookingId: string,
   userId: string,
-) {
+): Promise<{ booking: AuthorizedBooking; viewerRole: 'CUSTOMER' | 'PROVIDER' }> {
   const booking = await prisma.booking.findFirst({
     where: {
       id: bookingId,
@@ -45,10 +54,16 @@ async function authorizeChatAccess(
       status: true,
       customerCompletedAt: true,
       providerCashConfirmedAt: true,
+      userId: true,
+      customerChatReadAt: true,
+      providerChatReadAt: true,
+      provider: { select: { userId: true } },
     },
   })
   if (!booking) throw app.httpErrors.notFound('Booking not found')
-  return booking
+  const viewerRole: 'CUSTOMER' | 'PROVIDER' =
+    booking.userId === userId ? 'CUSTOMER' : 'PROVIDER'
+  return { booking, viewerRole }
 }
 
 export const messageRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -62,13 +77,18 @@ export const messageRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (req) => {
       const session = requireSession(req)
-      const booking = await authorizeChatAccess(app, req.params.id, session.user.id)
+      const { booking, viewerRole } = await authorizeChatAccess(app, req.params.id, session.user.id)
 
       const messages = await prisma.message.findMany({
         where: { bookingId: booking.id },
         orderBy: { createdAt: 'asc' },
         include: { sender: { select: { name: true } } },
       })
+
+      const myReadAt =
+        viewerRole === 'CUSTOMER' ? booking.customerChatReadAt : booking.providerChatReadAt
+      const otherReadAt =
+        viewerRole === 'CUSTOMER' ? booking.providerChatReadAt : booking.customerChatReadAt
 
       return {
         messages: messages.map((m) => ({
@@ -77,9 +97,12 @@ export const messageRoutes: FastifyPluginAsyncZod = async (app) => {
           senderName: m.sender.name,
           body: m.body,
           createdAt: m.createdAt.toISOString(),
+          deliveredAt: m.deliveredAt?.toISOString() ?? null,
         })),
         isOpen: isChatOpen(booking),
         closesAt: chatClosesAt(booking)?.toISOString() ?? null,
+        myReadAt: myReadAt?.toISOString() ?? null,
+        otherReadAt: otherReadAt?.toISOString() ?? null,
       }
     },
   )
@@ -95,7 +118,7 @@ export const messageRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (req, reply) => {
       const session = requireSession(req)
-      const booking = await authorizeChatAccess(app, req.params.id, session.user.id)
+      const { booking } = await authorizeChatAccess(app, req.params.id, session.user.id)
 
       if (!isChatOpen(booking)) {
         throw app.httpErrors.conflict('Chat for this booking is closed')
@@ -116,10 +139,41 @@ export const messageRoutes: FastifyPluginAsyncZod = async (app) => {
         senderName: created.sender.name,
         body: created.body,
         createdAt: created.createdAt.toISOString(),
+        deliveredAt: created.deliveredAt?.toISOString() ?? null,
       }
       emitChatMessage(booking.id, dto)
       reply.status(201)
       return dto
+    },
+  )
+
+  /**
+   * Mark the thread read up to "now" for the calling participant.
+   * Idempotent — safe to call on every chat-page mount or focus.
+   */
+  app.post(
+    '/bookings/:id/messages/read',
+    {
+      schema: {
+        params: z.object({ id: z.string().min(1) }),
+        response: { 200: z.object({ readAt: z.iso.datetime() }) },
+      },
+    },
+    async (req) => {
+      const session = requireSession(req)
+      const { booking, viewerRole } = await authorizeChatAccess(app, req.params.id, session.user.id)
+
+      const now = new Date()
+      await prisma.booking.update({
+        where: { id: booking.id },
+        data:
+          viewerRole === 'CUSTOMER'
+            ? { customerChatReadAt: now }
+            : { providerChatReadAt: now },
+      })
+
+      emitChatRead(booking.id, session.user.id, now)
+      return { readAt: now.toISOString() }
     },
   )
 }

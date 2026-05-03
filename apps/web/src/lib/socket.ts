@@ -29,6 +29,7 @@ interface ClientToServerEvents {
   ) => void
   'booking:join': (data: { bookingId: string }, ack?: (resp: Ack) => void) => void
   'booking:leave': (data: { bookingId: string }) => void
+  'chat:delivered': (data: { messageId: string }) => void
 }
 
 interface ServerToClientEvents {
@@ -48,7 +49,18 @@ interface ServerToClientEvents {
       senderName: string
       body: string
       createdAt: string
+      deliveredAt: string | null
     }
+  }) => void
+  'chat:delivered': (data: {
+    bookingId: string
+    messageId: string
+    deliveredAt: string
+  }) => void
+  'chat:read': (data: {
+    bookingId: string
+    readerUserId: string
+    readAt: string
   }) => void
 }
 

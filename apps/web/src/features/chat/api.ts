@@ -7,6 +7,8 @@ export interface ChatMessage {
   senderName: string
   body: string
   createdAt: string
+  /** Set when the recipient's device acked delivery. */
+  deliveredAt: string | null
 }
 
 export interface ChatThread {
@@ -15,6 +17,10 @@ export interface ChatThread {
   isOpen: boolean
   /** When the chat will auto-close (only set during the 3h post-completion wind-down). */
   closesAt: string | null
+  /** When the calling viewer last read the thread. */
+  myReadAt: string | null
+  /** When the other party last read the thread (drives the "Read" indicator). */
+  otherReadAt: string | null
 }
 
 export const chatQueryOptions = (bookingId: string) =>
@@ -26,4 +32,8 @@ export const chatQueryOptions = (bookingId: string) =>
 
 export function sendMessage(bookingId: string, body: string) {
   return api.post<ChatMessage>(`/bookings/${bookingId}/messages`, { body })
+}
+
+export function markChatRead(bookingId: string) {
+  return api.post<{ readAt: string }>(`/bookings/${bookingId}/messages/read`)
 }

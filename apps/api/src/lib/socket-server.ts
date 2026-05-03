@@ -35,6 +35,8 @@ export interface ClientToServerEvents {
   'booking:join': (data: { bookingId: string }, ack?: (resp: Ack) => void) => void
   /** Stop receiving updates for a booking room. */
   'booking:leave': (data: { bookingId: string }) => void
+  /** Recipient confirms a chat message hit their device. */
+  'chat:delivered': (data: { messageId: string }) => void
 }
 
 export interface ServerToClientEvents {
@@ -60,7 +62,20 @@ export interface ServerToClientEvents {
       senderName: string
       body: string
       createdAt: string
+      deliveredAt: string | null
     }
+  }) => void
+  /** Recipient device confirmed delivery of a specific message. */
+  'chat:delivered': (data: {
+    bookingId: string
+    messageId: string
+    deliveredAt: string
+  }) => void
+  /** A participant marked the thread read up to readAt. */
+  'chat:read': (data: {
+    bookingId: string
+    readerUserId: string
+    readAt: string
   }) => void
 }
 
@@ -73,10 +88,25 @@ export function emitChatMessage(
     senderName: string
     body: string
     createdAt: string
+    deliveredAt: string | null
   },
 ): void {
   if (!ioRef) return
   ioRef.to(`booking:${bookingId}`).emit('chat:message', { bookingId, message })
+}
+
+/** Broadcast that a participant marked the thread read up to readAt. */
+export function emitChatRead(
+  bookingId: string,
+  readerUserId: string,
+  readAt: Date,
+): void {
+  if (!ioRef) return
+  ioRef.to(`booking:${bookingId}`).emit('chat:read', {
+    bookingId,
+    readerUserId,
+    readAt: readAt.toISOString(),
+  })
 }
 
 /**
@@ -212,6 +242,12 @@ export function setupSocketServer(app: FastifyInstance): AppServer {
       void socket.leave(`booking:${data.bookingId}`)
     })
 
+    socket.on('chat:delivered', (data) => {
+      void handleChatDelivered(io, socket, data).catch((err) => {
+        app.log.warn({ err, userId, messageId: data.messageId }, 'chat:delivered failed')
+      })
+    })
+
     socket.on('disconnect', (reason) => {
       app.log.debug({ userId, reason }, 'socket disconnected')
     })
@@ -295,6 +331,43 @@ async function joinProviderAreaRooms(socket: AppSocket) {
   for (const city of profile.cities) {
     await socket.join(areaRoom(city))
   }
+}
+
+async function handleChatDelivered(
+  io: AppServer,
+  socket: AppSocket,
+  data: { messageId: string },
+) {
+  const userId = socket.data.session.user.id
+  // Only mark delivered if the caller is actually a participant and isn't the sender.
+  const message = await prisma.message.findUnique({
+    where: { id: data.messageId },
+    select: {
+      id: true,
+      bookingId: true,
+      senderId: true,
+      deliveredAt: true,
+      booking: { select: { userId: true, provider: { select: { userId: true } } } },
+    },
+  })
+  if (!message) return
+  const participantIds = [message.booking.userId, message.booking.provider?.userId].filter(
+    (id): id is string => !!id,
+  )
+  if (!participantIds.includes(userId)) return
+  if (userId === message.senderId) return // sender's own ack — ignore
+  if (message.deliveredAt) return // already marked
+
+  const now = new Date()
+  await prisma.message.update({
+    where: { id: data.messageId },
+    data: { deliveredAt: now },
+  })
+  io.to(`booking:${message.bookingId}`).emit('chat:delivered', {
+    bookingId: message.bookingId,
+    messageId: message.id,
+    deliveredAt: now.toISOString(),
+  })
 }
 
 async function handleBookingJoin(
