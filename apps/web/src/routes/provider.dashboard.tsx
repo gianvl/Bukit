@@ -97,11 +97,20 @@ function ProviderDashboard() {
       )
       queryClient.invalidateQueries({ queryKey: availableBookingsQueryOptions.queryKey })
     }
+    // Server emits booking:status to provider:{userId} room (auto-joined on
+    // connect) for any of this provider's assigned bookings — refresh both
+    // the assigned list and any open booking detail in cache.
+    const onStatus = (data: { bookingId: string }) => {
+      queryClient.invalidateQueries({ queryKey: assignedBookingsQueryOptions.queryKey })
+      queryClient.invalidateQueries({ queryKey: ['bookings', data.bookingId] })
+    }
     socket.on('booking:created', onCreated)
     socket.on('booking:taken', onTaken)
+    socket.on('booking:status', onStatus)
     return () => {
       socket.off('booking:created', onCreated)
       socket.off('booking:taken', onTaken)
+      socket.off('booking:status', onStatus)
     }
   }, [profile?.status, queryClient])
 

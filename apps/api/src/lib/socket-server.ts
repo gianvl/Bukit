@@ -47,15 +47,42 @@ export interface ServerToClientEvents {
   'booking:status': (data: { bookingId: string }) => void
 }
 
-/** Notify everyone subscribed to a booking that its status changed. */
-export function emitBookingStatus(bookingId: string) {
-  if (!ioRef) return // not initialized in tests
+/**
+ * Notify everyone subscribed to a booking that its status changed.
+ * Emits to:
+ *   - `booking:{id}` (customer's open detail page joins this on mount)
+ *   - `provider:{userId}` of the assigned provider, if any (their dashboard
+ *      auto-joins on connect — gives them live updates without joining every
+ *      booking's room individually)
+ *
+ * Fire-and-forget: callers don't need to await; we swallow lookup errors.
+ */
+export async function emitBookingStatus(bookingId: string): Promise<void> {
+  if (!ioRef) return
   ioRef.to(`booking:${bookingId}`).emit('booking:status', { bookingId })
+
+  try {
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+      select: { provider: { select: { userId: true } } },
+    })
+    if (booking?.provider?.userId) {
+      ioRef.to(providerRoom(booking.provider.userId)).emit('booking:status', { bookingId })
+    }
+  } catch {
+    // Best-effort; status changes still reach the booking room above.
+  }
 }
 
 /** Normalize a city name to a stable Socket.IO room key. */
 export function areaRoom(city: string): string {
   return `area:${city.trim().toLowerCase()}`
+}
+
+/** Per-provider room. Provider auto-joins on connect; used to push events
+ *  about all of their assigned bookings without joining each booking's room. */
+export function providerRoom(userId: string): string {
+  return `provider:${userId}`
 }
 
 export interface SocketData {
@@ -222,6 +249,8 @@ async function joinProviderAreaRooms(socket: AppSocket) {
     select: { cities: true },
   })
   if (!profile) return
+  // Personal room first (cheap, single join), then area rooms for matching.
+  await socket.join(providerRoom(userId))
   for (const city of profile.cities) {
     await socket.join(areaRoom(city))
   }
