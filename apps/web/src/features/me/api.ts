@@ -44,3 +44,31 @@ export interface OnboardingInput {
 export function submitOnboarding(input: OnboardingInput) {
   return api.post<Me>('/me/onboarding', input)
 }
+
+export interface CustomerStats {
+  totalBookings: number
+  completedBookings: number
+  cancelledBookings: number
+  totalSpentCentavos: number
+  lastBookingAt: string | null
+}
+
+export interface ProviderStats {
+  totalJobs: number
+  completedJobs: number
+  totalEarnedCentavos: number
+  jobsThisWeek: number
+  ratingAvg: number
+  ratingCount: number
+}
+
+export interface MeStats {
+  customer: CustomerStats
+  provider: ProviderStats | null
+}
+
+export const meStatsQueryOptions = queryOptions({
+  queryKey: ['me', 'stats'] as const,
+  queryFn: () => api.get<MeStats>('/me/stats'),
+  staleTime: 30_000,
+})

@@ -9,6 +9,28 @@ const initialProviderStatus = env.NODE_ENV === 'production' ? 'PENDING_KYC' : 'A
 
 const RoleEnum = z.enum(['USER', 'PROVIDER', 'ADMIN'])
 
+const CustomerStatsDto = z.object({
+  totalBookings: z.int().nonnegative(),
+  completedBookings: z.int().nonnegative(),
+  cancelledBookings: z.int().nonnegative(),
+  totalSpentCentavos: z.int().nonnegative(),
+  lastBookingAt: z.iso.datetime().nullable(),
+})
+
+const ProviderStatsDto = z.object({
+  totalJobs: z.int().nonnegative(),
+  completedJobs: z.int().nonnegative(),
+  totalEarnedCentavos: z.int().nonnegative(),
+  jobsThisWeek: z.int().nonnegative(),
+  ratingAvg: z.number(),
+  ratingCount: z.int().nonnegative(),
+})
+
+const MeStatsDto = z.object({
+  customer: CustomerStatsDto,
+  provider: ProviderStatsDto.nullable(),
+})
+
 const MeDto = z.object({
   id: z.string(),
   name: z.string(),
@@ -114,6 +136,92 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
         phoneNumberVerified: updated.phoneNumberVerified,
         onboardedAt: updated.onboardedAt?.toISOString() ?? null,
       }
+    },
+  )
+
+  /**
+   * Stats for the current user, computed live. `customer` is always present
+   * (anyone can book). `provider` is non-null only if the user has a profile.
+   */
+  app.get(
+    '/me/stats',
+    {
+      schema: { response: { 200: MeStatsDto } },
+    },
+    async (req) => {
+      const { user } = requireSession(req)
+
+      const [
+        totalBookings,
+        completedBookings,
+        cancelledBookings,
+        spentSum,
+        lastBooking,
+      ] = await Promise.all([
+        prisma.booking.count({ where: { userId: user.id } }),
+        prisma.booking.count({ where: { userId: user.id, status: 'COMPLETED' } }),
+        prisma.booking.count({
+          where: {
+            userId: user.id,
+            status: { in: ['CANCELLED_BY_USER', 'CANCELLED_BY_PROVIDER'] },
+          },
+        }),
+        prisma.booking.aggregate({
+          where: { userId: user.id, status: 'COMPLETED' },
+          _sum: { totalCentavos: true },
+        }),
+        prisma.booking.findFirst({
+          where: { userId: user.id },
+          orderBy: { createdAt: 'desc' },
+          select: { createdAt: true },
+        }),
+      ])
+
+      const customer = {
+        totalBookings,
+        completedBookings,
+        cancelledBookings,
+        totalSpentCentavos: spentSum._sum.totalCentavos ?? 0,
+        lastBookingAt: lastBooking?.createdAt.toISOString() ?? null,
+      }
+
+      const profile = await prisma.providerProfile.findUnique({
+        where: { userId: user.id },
+        select: { id: true, ratingAvg: true, ratingCount: true },
+      })
+
+      let provider = null
+      if (profile) {
+        const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+        const [totalJobs, completedJobs, earnedSum, thisWeek] = await Promise.all([
+          prisma.booking.count({ where: { providerId: profile.id } }),
+          prisma.booking.count({
+            where: { providerId: profile.id, status: 'COMPLETED' },
+          }),
+          // Earnings = sum of payouts (PAID + PENDING combined). Both represent money owed/paid for completed jobs.
+          prisma.payout.aggregate({
+            where: { providerId: profile.id },
+            _sum: { amountCentavos: true },
+          }),
+          prisma.booking.count({
+            where: {
+              providerId: profile.id,
+              status: 'COMPLETED',
+              updatedAt: { gte: oneWeekAgo },
+            },
+          }),
+        ])
+        provider = {
+          totalJobs,
+          completedJobs,
+          totalEarnedCentavos: earnedSum._sum.amountCentavos ?? 0,
+          jobsThisWeek: thisWeek,
+          ratingAvg: profile.ratingAvg,
+          ratingCount: profile.ratingCount,
+        }
+      }
+
+      return { customer, provider }
     },
   )
 }

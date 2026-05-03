@@ -1,12 +1,37 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { motion, type Variants } from 'framer-motion'
 import { ArrowRight, ArrowUpRight, ShieldCheck, Sparkles, Wallet, Wind } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatCentavos, formatDuration } from '@/lib/format'
+import { useSession } from '@/lib/auth-client'
+import { meQueryOptions } from '@/features/me/api'
+import { UserHome } from '@/components/user-home'
 
 export const Route = createFileRoute('/')({
-  component: LandingPage,
+  component: HomeRoute,
 })
+
+function HomeRoute() {
+  const { data: session, isPending: sessionPending } = useSession()
+  // Only fetch /me when signed in. The query options return null on 401/403 too.
+  const { data: me } = useQuery({
+    ...meQueryOptions,
+    enabled: !!session?.user,
+  })
+
+  // While determining auth, render nothing — avoids a marketing flash for signed-in users.
+  if (sessionPending) return null
+
+  // Signed-in but not yet onboarded → onboarding flow handles redirects elsewhere; render nothing here.
+  if (session?.user && me && !me.onboardedAt) return null
+
+  if (session?.user && me?.onboardedAt) {
+    return <UserHome />
+  }
+
+  return <LandingPage />
+}
 
 function LandingPage() {
   return (
