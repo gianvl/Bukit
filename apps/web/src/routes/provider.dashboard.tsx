@@ -353,7 +353,8 @@ function LocationSharingIndicator({ availabilityMode }: { availabilityMode: Avai
     return (
       <p className="text-xs text-muted-foreground inline-flex items-center gap-2">
         <MapPinOff className="size-3.5" />
-        Location not shared. On-demand matching needs your location.
+        Switch to <span className="font-medium text-foreground">On-demand + scheduled</span> to
+        start sharing your location and receive on-demand bookings.
       </p>
     )
   }
