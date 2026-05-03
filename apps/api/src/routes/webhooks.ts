@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { parseWebhookEvent, verifyWebhookSignature } from '../lib/paymongo.js'
-import { areaRoom, getIo } from '../lib/socket-server.js'
+import { areaRoom, emitBookingStatus, getIo } from '../lib/socket-server.js'
 
 const eventToPaymentStatus = {
   'checkout_session.payment.paid': 'CAPTURED',
@@ -117,6 +117,8 @@ export const webhookRoutes: FastifyPluginAsyncZod = async (app) => {
         getIo().to(areaRoom(cityForBroadcast)).emit('booking:created', {
           bookingId: payment.bookingId,
         })
+        // Customer page is open and waiting — push the status flip.
+        emitBookingStatus(payment.bookingId)
       }
 
       return { received: true as const }

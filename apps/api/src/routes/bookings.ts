@@ -5,7 +5,7 @@ import { requireSession } from '../lib/auth-fastify.js'
 import { quoteCancellation } from '../lib/cancellation-policy.js'
 import { refundPayment } from '../lib/paymongo.js'
 import { haversineKm } from '../lib/distance.js'
-import { areaRoom, getIo } from '../lib/socket-server.js'
+import { areaRoom, emitBookingStatus, getIo } from '../lib/socket-server.js'
 
 const BookingStatusEnum = z.enum([
   'PENDING_PAYMENT',
@@ -339,6 +339,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
           : []),
       ])
 
+      emitBookingStatus(booking.id)
       return {
         id: booking.id,
         status: 'CANCELLED_BY_USER' as const,
@@ -407,6 +408,8 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
       if (taken) {
         getIo().to(areaRoom(taken.city)).emit('booking:taken', { bookingId: req.params.id })
       }
+      // Push to anyone watching this booking's room (the customer's detail page).
+      emitBookingStatus(req.params.id)
 
       return {
         id: req.params.id,
@@ -439,6 +442,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
           data: { bookingId: booking.id, type: 'STARTED', actorId: session.user.id },
         }),
       ])
+      emitBookingStatus(booking.id)
       return { id: booking.id, status: 'IN_PROGRESS' as const }
     },
   )
@@ -482,6 +486,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
             },
           }),
         ])
+        emitBookingStatus(booking.id)
         return { id: booking.id, status: 'PENDING_CASH_CONFIRM' as const }
       }
 
@@ -517,6 +522,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
         )
       }
       await prisma.$transaction(ops)
+      emitBookingStatus(booking.id)
       return { id: booking.id, status: 'COMPLETED' as const }
     },
   )
@@ -581,6 +587,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
         )
       }
       await prisma.$transaction(ops)
+      emitBookingStatus(full.id)
       return { id: full.id, status: 'COMPLETED' as const }
     },
   )

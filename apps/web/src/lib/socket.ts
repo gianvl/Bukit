@@ -35,6 +35,7 @@ interface ServerToClientEvents {
   'provider:location': (data: ProviderLocationPayload) => void
   'booking:created': (data: { bookingId: string }) => void
   'booking:taken': (data: { bookingId: string }) => void
+  'booking:status': (data: { bookingId: string }) => void
 }
 
 export type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>

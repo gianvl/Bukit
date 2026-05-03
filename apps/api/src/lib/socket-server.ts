@@ -43,6 +43,14 @@ export interface ServerToClientEvents {
   'booking:created': (data: { bookingId: string }) => void
   /** A booking was claimed by another provider — remove from your list. */
   'booking:taken': (data: { bookingId: string }) => void
+  /** Booking status changed; clients in `booking:{id}` should refetch detail. */
+  'booking:status': (data: { bookingId: string }) => void
+}
+
+/** Notify everyone subscribed to a booking that its status changed. */
+export function emitBookingStatus(bookingId: string) {
+  if (!ioRef) return // not initialized in tests
+  ioRef.to(`booking:${bookingId}`).emit('booking:status', { bookingId })
 }
 
 /** Normalize a city name to a stable Socket.IO room key. */

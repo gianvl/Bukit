@@ -93,6 +93,28 @@ function BookingDetailPage() {
     },
   })
 
+  // Join the booking's room and listen for status changes pushed from the server
+  // (provider accepted, started, completed, cancelled, payment captured).
+  useEffect(() => {
+    const socket = getSocket()
+    const onStatus = (payload: { bookingId: string }) => {
+      if (payload.bookingId !== id) return
+      queryClient.invalidateQueries({ queryKey: queryOpts.queryKey })
+    }
+    const join = () => {
+      socket.emit('booking:join', { bookingId: id })
+    }
+    socket.on('booking:status', onStatus)
+    socket.on('connect', join)
+    if (socket.connected) join()
+
+    return () => {
+      socket.off('booking:status', onStatus)
+      socket.off('connect', join)
+      socket.emit('booking:leave', { bookingId: id })
+    }
+  }, [id, queryClient, queryOpts.queryKey])
+
   // On first land with status=success, force an immediate refetch in case the
   // cache from the loader is older than the webhook.
   useEffect(() => {
@@ -319,7 +341,9 @@ function BookingMapPanel({ booking }: { booking: BookingDetail }) {
     enabled: showProviderPin,
   })
 
-  // Subscribe to live provider location pushes for this booking.
+  // Subscribe to live provider location pushes. The booking room itself is
+  // joined/left by the parent BookingDetailPage so this works as soon as the
+  // page mounts (parent stays mounted across status transitions).
   useEffect(() => {
     if (!showProviderPin) return
     const socket = getSocket()
@@ -332,17 +356,9 @@ function BookingMapPanel({ booking }: { booking: BookingDetail }) {
         distanceKm: payload.distanceKm,
       })
     }
-    const join = () => {
-      socket.emit('booking:join', { bookingId: booking.id })
-    }
     socket.on('provider:location', onLocation)
-    socket.on('connect', join)
-    if (socket.connected) join()
-
     return () => {
       socket.off('provider:location', onLocation)
-      socket.off('connect', join)
-      socket.emit('booking:leave', { bookingId: booking.id })
     }
   }, [showProviderPin, booking.id, queryKey, queryClient])
 
