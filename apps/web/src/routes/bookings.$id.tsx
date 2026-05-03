@@ -34,6 +34,8 @@ import {
   type BookingEventType,
   type BookingStatus,
 } from '@/features/bookings/queries'
+import { showStatusToast } from '@/features/bookings/status-toasts'
+import { meQueryOptions } from '@/features/me/api'
 import { Navigation } from 'lucide-react'
 import { BookingStatusBadge, PaymentStatusBadge } from '@/features/bookings/status'
 import {
@@ -98,8 +100,22 @@ function BookingDetailPage() {
   // (provider accepted, started, completed, cancelled, payment captured).
   useEffect(() => {
     const socket = getSocket()
-    const onStatus = (payload: { bookingId: string }) => {
+    const onStatus = (payload: {
+      bookingId: string
+      status: string
+      actorUserId: string | null
+    }) => {
       if (payload.bookingId !== id) return
+      const me = queryClient.getQueryData(meQueryOptions.queryKey) as
+        | { id: string; role: 'USER' | 'PROVIDER' | 'ADMIN' }
+        | null
+        | undefined
+      showStatusToast({
+        status: payload.status,
+        actorUserId: payload.actorUserId,
+        myUserId: me?.id,
+        viewerRole: me?.role,
+      })
       queryClient.invalidateQueries({ queryKey: queryOpts.queryKey })
     }
     const join = () => {

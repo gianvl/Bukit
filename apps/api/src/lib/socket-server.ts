@@ -44,7 +44,13 @@ export interface ServerToClientEvents {
   /** A booking was claimed by another provider — remove from your list. */
   'booking:taken': (data: { bookingId: string }) => void
   /** Booking status changed; clients in `booking:{id}` should refetch detail. */
-  'booking:status': (data: { bookingId: string }) => void
+  'booking:status': (data: {
+    bookingId: string
+    /** New status — lets clients toast without an extra fetch. */
+    status: string
+    /** User who triggered the change. Lets clients suppress self-toasts. */
+    actorUserId: string | null
+  }) => void
 }
 
 /**
@@ -55,22 +61,31 @@ export interface ServerToClientEvents {
  *      auto-joins on connect — gives them live updates without joining every
  *      booking's room individually)
  *
+ * Looks up the current status so clients can toast without an extra fetch.
+ * `actorUserId` lets clients suppress self-triggered toasts.
+ *
  * Fire-and-forget: callers don't need to await; we swallow lookup errors.
  */
-export async function emitBookingStatus(bookingId: string): Promise<void> {
+export async function emitBookingStatus(
+  bookingId: string,
+  actorUserId: string | null = null,
+): Promise<void> {
   if (!ioRef) return
-  ioRef.to(`booking:${bookingId}`).emit('booking:status', { bookingId })
 
   try {
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
-      select: { provider: { select: { userId: true } } },
+      select: { status: true, provider: { select: { userId: true } } },
     })
-    if (booking?.provider?.userId) {
-      ioRef.to(providerRoom(booking.provider.userId)).emit('booking:status', { bookingId })
+    if (!booking) return
+
+    const payload = { bookingId, status: booking.status, actorUserId }
+    ioRef.to(`booking:${bookingId}`).emit('booking:status', payload)
+    if (booking.provider?.userId) {
+      ioRef.to(providerRoom(booking.provider.userId)).emit('booking:status', payload)
     }
   } catch {
-    // Best-effort; status changes still reach the booking room above.
+    // Best-effort; not the end of the world if a single broadcast misses.
   }
 }
 

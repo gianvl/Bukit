@@ -370,7 +370,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
           : []),
       ])
 
-      emitBookingStatus(booking.id)
+      emitBookingStatus(booking.id, session.user.id)
       return {
         id: booking.id,
         status: 'CANCELLED_BY_USER' as const,
@@ -440,7 +440,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
         getIo().to(areaRoom(taken.city)).emit('booking:taken', { bookingId: req.params.id })
       }
       // Push to anyone watching this booking's room (the customer's detail page).
-      emitBookingStatus(req.params.id)
+      emitBookingStatus(req.params.id, session.user.id)
 
       return {
         id: req.params.id,
@@ -473,7 +473,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
           data: { bookingId: booking.id, type: 'STARTED', actorId: session.user.id },
         }),
       ])
-      emitBookingStatus(booking.id)
+      emitBookingStatus(booking.id, session.user.id)
       return { id: booking.id, status: 'IN_PROGRESS' as const }
     },
   )
@@ -517,7 +517,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
             },
           }),
         ])
-        emitBookingStatus(booking.id)
+        emitBookingStatus(booking.id, session.user.id)
         return { id: booking.id, status: 'PENDING_CASH_CONFIRM' as const }
       }
 
@@ -553,7 +553,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
         )
       }
       await prisma.$transaction(ops)
-      emitBookingStatus(booking.id)
+      emitBookingStatus(booking.id, session.user.id)
       return { id: booking.id, status: 'COMPLETED' as const }
     },
   )
@@ -618,7 +618,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
         )
       }
       await prisma.$transaction(ops)
-      emitBookingStatus(full.id)
+      emitBookingStatus(full.id, session.user.id)
       return { id: full.id, status: 'COMPLETED' as const }
     },
   )

@@ -31,6 +31,8 @@ import { cn } from '@/lib/utils'
 import { useShareLocation, type ShareLocationStatus } from '@/features/providers/use-share-location'
 import { getSocket } from '@/lib/socket'
 import { PageEyebrow, PageHero, PageStat, PageStats, PageTitle } from '@/components/page-shell'
+import { showStatusToast } from '@/features/bookings/status-toasts'
+import { meQueryOptions } from '@/features/me/api'
 import { ApiError } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { getSession } from '@/lib/auth-client'
@@ -100,8 +102,23 @@ function ProviderDashboard() {
     }
     // Server emits booking:status to provider:{userId} room (auto-joined on
     // connect) for any of this provider's assigned bookings — refresh both
-    // the assigned list and any open booking detail in cache.
-    const onStatus = (data: { bookingId: string }) => {
+    // the assigned list and any open booking detail in cache, plus toast the
+    // provider when the change wasn't their own click.
+    const onStatus = (data: {
+      bookingId: string
+      status: string
+      actorUserId: string | null
+    }) => {
+      const me = queryClient.getQueryData(meQueryOptions.queryKey) as
+        | { id: string; role: 'USER' | 'PROVIDER' | 'ADMIN' }
+        | null
+        | undefined
+      showStatusToast({
+        status: data.status,
+        actorUserId: data.actorUserId,
+        myUserId: me?.id,
+        viewerRole: me?.role,
+      })
       queryClient.invalidateQueries({ queryKey: assignedBookingsQueryOptions.queryKey })
       queryClient.invalidateQueries({ queryKey: ['bookings', data.bookingId] })
     }
