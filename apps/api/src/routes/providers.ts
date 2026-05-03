@@ -1,7 +1,9 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma.js'
 import { requireSession } from '../lib/auth-fastify.js'
+import { haversineKm, ON_DEMAND_RADIUS_KM } from '../lib/distance.js'
 
 const ProviderStatusEnum = z.enum(['PENDING_KYC', 'ACTIVE', 'SUSPENDED', 'REJECTED'])
 const AvailabilityModeEnum = z.enum(['OFFLINE', 'SCHEDULED_ONLY', 'FULL'])
@@ -26,6 +28,11 @@ const SetAvailabilityBody = z.object({
   availabilityMode: AvailabilityModeEnum,
 })
 
+const SetLocationBody = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+})
+
 const AssignedBookingDto = z.object({
   id: z.string(),
   status: z.enum([
@@ -47,9 +54,13 @@ const AssignedBookingDto = z.object({
   durationMinutes: z.int().positive(),
   addressLine1: z.string(),
   city: z.string(),
+  latitude: z.number().nullable(),
+  longitude: z.number().nullable(),
   totalCentavos: z.int().nonnegative(),
   serviceTier: z.object({ id: z.string(), slug: z.string(), name: z.string() }),
   customerName: z.string(),
+  /** Distance from the caller's current location in km (only set for on-demand). */
+  distanceKm: z.number().nullable(),
 })
 
 export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
@@ -137,15 +148,48 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
   )
 
   /**
-   * Bookings available to the caller for acceptance:
-   *   - status CONFIRMED (cash, no upfront payment) or IN_ESCROW (online, paid)
-   *   - unassigned
-   *   - in one of the caller's cities (case-insensitive)
+   * Updates the caller's current location. Provider's frontend pings this
+   * every ~10 seconds while online so on-demand matching has fresh coords.
+   */
+  app.patch(
+    '/providers/me/location',
+    {
+      schema: {
+        body: SetLocationBody,
+        response: { 200: z.object({ ok: z.literal(true) }) },
+      },
+    },
+    async (req) => {
+      const session = requireSession(req)
+      const profile = await prisma.providerProfile.findUnique({
+        where: { userId: session.user.id },
+        select: { id: true },
+      })
+      if (!profile) throw app.httpErrors.forbidden('Not a provider')
+
+      await prisma.providerProfile.update({
+        where: { id: profile.id },
+        data: {
+          currentLatitude: req.body.latitude,
+          currentLongitude: req.body.longitude,
+          lastLocationAt: new Date(),
+        },
+      })
+      return { ok: true as const }
+    },
+  )
+
+  /**
+   * Bookings available for acceptance.
    *
-   * Filtered by availabilityMode:
-   *   OFFLINE        → empty
-   *   SCHEDULED_ONLY → exclude bookingMode = ON_DEMAND
-   *   FULL           → both
+   * Two filters compose:
+   *   - SCHEDULED bookings: include if booking.city ∈ caller.cities (case-insensitive).
+   *     Available to providers in SCHEDULED_ONLY or FULL mode.
+   *   - ON_DEMAND bookings: include only if caller has a fresh location AND
+   *     mode = FULL AND booking is within ON_DEMAND_RADIUS_KM (5 km).
+   *     Distance check is post-query in JS so we don't need PostGIS.
+   *
+   * OFFLINE → empty.
    */
   app.get(
     '/providers/me/available-bookings',
@@ -158,21 +202,46 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
       const session = requireSession(req)
       const profile = await prisma.providerProfile.findUnique({
         where: { userId: session.user.id },
-        select: { id: true, status: true, cities: true, availabilityMode: true },
+        select: {
+          id: true,
+          status: true,
+          cities: true,
+          availabilityMode: true,
+          currentLatitude: true,
+          currentLongitude: true,
+        },
       })
       if (!profile) throw app.httpErrors.forbidden('Not a provider')
       if (profile.status !== 'ACTIVE') return { bookings: [] }
       if (profile.availabilityMode === 'OFFLINE') return { bookings: [] }
-      if (profile.cities.length === 0) return { bookings: [] }
+
+      const includesScheduled = profile.cities.length > 0
+      const hasLocation =
+        profile.currentLatitude != null && profile.currentLongitude != null
+      const includesOnDemand =
+        profile.availabilityMode === 'FULL' && hasLocation
+
+      const filters: Prisma.BookingWhereInput[] = []
+      if (includesScheduled) {
+        filters.push({
+          bookingMode: 'SCHEDULED',
+          city: { in: profile.cities, mode: 'insensitive' },
+        })
+      }
+      if (includesOnDemand) {
+        filters.push({
+          bookingMode: 'ON_DEMAND',
+          latitude: { not: null },
+          longitude: { not: null },
+        })
+      }
+      if (filters.length === 0) return { bookings: [] }
 
       const rows = await prisma.booking.findMany({
         where: {
           status: { in: ['CONFIRMED', 'IN_ESCROW'] },
           providerId: null,
-          city: { in: profile.cities, mode: 'insensitive' },
-          ...(profile.availabilityMode === 'SCHEDULED_ONLY'
-            ? { bookingMode: 'SCHEDULED' }
-            : {}),
+          OR: filters,
         },
         orderBy: { scheduledAt: 'asc' },
         include: {
@@ -180,7 +249,30 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
           user: { select: { name: true } },
         },
       })
-      return { bookings: rows.map(toAssignedDto) }
+
+      const out: ReturnType<typeof toAssignedDto>[] = []
+      for (const b of rows) {
+        let distanceKm: number | null = null
+        if (b.bookingMode === 'ON_DEMAND') {
+          if (!includesOnDemand || b.latitude == null || b.longitude == null) continue
+          distanceKm = haversineKm(
+            { lat: profile.currentLatitude!, lng: profile.currentLongitude! },
+            { lat: b.latitude, lng: b.longitude },
+          )
+          if (distanceKm > ON_DEMAND_RADIUS_KM) continue
+        }
+        out.push(toAssignedDto(b, distanceKm))
+      }
+      // On-demand bookings sort by distance (nearest first), scheduled stay by scheduledAt.
+      out.sort((a, b) => {
+        if (a.bookingMode === 'ON_DEMAND' && b.bookingMode === 'ON_DEMAND') {
+          return (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity)
+        }
+        if (a.bookingMode === 'ON_DEMAND') return -1
+        if (b.bookingMode === 'ON_DEMAND') return 1
+        return a.scheduledAt.localeCompare(b.scheduledAt)
+      })
+      return { bookings: out }
     },
   )
 
@@ -256,12 +348,14 @@ type BookingRow = {
   durationMinutes: number
   addressLine1: string
   city: string
+  latitude: number | null
+  longitude: number | null
   totalCentavos: number
   serviceTier: { id: string; slug: string; name: string }
   user: { name: string }
 }
 
-function toAssignedDto(b: BookingRow) {
+function toAssignedDto(b: BookingRow, distanceKm: number | null = null) {
   return {
     id: b.id,
     status: b.status,
@@ -271,8 +365,11 @@ function toAssignedDto(b: BookingRow) {
     durationMinutes: b.durationMinutes,
     addressLine1: b.addressLine1,
     city: b.city,
+    latitude: b.latitude,
+    longitude: b.longitude,
     totalCentavos: b.totalCentavos,
     serviceTier: b.serviceTier,
     customerName: b.user.name,
+    distanceKm,
   }
 }

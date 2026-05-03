@@ -24,9 +24,13 @@ export interface AssignedBooking {
   durationMinutes: number
   addressLine1: string
   city: string
+  latitude: number | null
+  longitude: number | null
   totalCentavos: number
   serviceTier: { id: string; slug: string; name: string }
   customerName: string
+  /** Distance from provider's current location in km (on-demand only). */
+  distanceKm: number | null
 }
 
 export const providerProfileQueryOptions = queryOptions({
@@ -82,6 +86,10 @@ export function applyAsProvider(input: ApplyProviderInput) {
 
 export function setAvailabilityMode(mode: AvailabilityMode) {
   return api.patch<ProviderProfile>('/providers/me/availability', { availabilityMode: mode })
+}
+
+export function setProviderLocation(loc: { latitude: number; longitude: number }) {
+  return api.patch<{ ok: true }>('/providers/me/location', loc)
 }
 
 /** Provider transitions PROVIDER_ASSIGNED → IN_PROGRESS. */
