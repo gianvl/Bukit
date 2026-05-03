@@ -8,6 +8,8 @@
     "build": "tsr generate && tsc -b && vite build",
     "lint": "eslint .",
     "typecheck": "tsr generate && tsc -b --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "routes:generate": "tsr generate",
     "preview": "vite preview"
   },
@@ -43,6 +45,7 @@
     "globals": "^17.5.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.58.2",
-    "vite": "^8.0.10"
+    "vite": "^8.0.10",
+    "vitest": "^4.1.5"
   }
 }

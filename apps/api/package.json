@@ -10,6 +10,8 @@
     "start": "node --env-file=.env dist/server.js",
     "typecheck": "prisma generate && tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prisma:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
@@ -35,6 +37,7 @@
     "@types/node": "^24.12.2",
     "prisma": "^6.19.3",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5"
   }
 }
