@@ -6,6 +6,7 @@ import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ErrorScreen } from '@/components/error-screen'
 import { signOut, useSession } from '@/lib/auth-client'
+import { disconnectSocket } from '@/lib/socket'
 
 export interface RouterContext {
   queryClient: QueryClient
@@ -35,6 +36,7 @@ function RootLayoutShell({ children }: { children: ReactNode }) {
 
   async function handleSignOut() {
     await signOut()
+    disconnectSocket()
     router.invalidate()
     router.navigate({ to: '/' })
   }

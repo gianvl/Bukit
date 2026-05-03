@@ -11,6 +11,7 @@ import {
 import { env } from './env.js'
 import { registerErrorHandler } from './lib/errors.js'
 import { registerAuth } from './lib/auth-fastify.js'
+import { setupSocketServer } from './lib/socket-server.js'
 import { healthRoutes } from './routes/health.js'
 import { meRoutes } from './routes/me.js'
 import { serviceTierRoutes } from './routes/service-tiers.js'
@@ -63,6 +64,8 @@ export async function buildApp() {
 
 async function start() {
   const app = await buildApp()
+  // Mount Socket.IO on the underlying http server (available pre-listen).
+  setupSocketServer(app)
   try {
     await app.listen({ host: env.HOST, port: env.PORT })
   } catch (err) {
