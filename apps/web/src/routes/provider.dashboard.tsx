@@ -46,7 +46,12 @@ export const Route = createFileRoute('/provider/dashboard')({
   component: ProviderDashboard,
   beforeLoad: async ({ location }) => {
     const { data } = await getSession()
-    if (!data) throw redirect({ to: '/signin', search: { redirect: location.href } })
+    if (!data) {
+      throw redirect({
+        to: '/signin',
+        search: { redirect: location.href, as: 'provider' },
+      })
+    }
   },
   loader: async ({ context }) => {
     const profile = await context.queryClient.ensureQueryData(providerProfileQueryOptions)

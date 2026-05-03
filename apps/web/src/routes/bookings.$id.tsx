@@ -59,7 +59,12 @@ export const Route = createFileRoute('/bookings/$id')({
   },
   beforeLoad: async ({ location }) => {
     const { data } = await getSession()
-    if (!data) throw redirect({ to: '/signin', search: { redirect: location.href } })
+    if (!data) {
+      throw redirect({
+        to: '/signin',
+        search: { redirect: location.href, as: 'customer' },
+      })
+    }
   },
   loader: ({ context, params }) =>
     context.queryClient.ensureQueryData(bookingDetailQueryOptions(params.id)),

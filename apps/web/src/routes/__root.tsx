@@ -1,12 +1,13 @@
 import { Link, Outlet, createRootRouteWithContext, useRouter } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
-import type { QueryClient } from '@tanstack/react-query'
+import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ErrorScreen } from '@/components/error-screen'
 import { signOut, useSession } from '@/lib/auth-client'
 import { disconnectSocket } from '@/lib/socket'
+import { meQueryOptions } from '@/features/me/api'
 
 export interface RouterContext {
   queryClient: QueryClient
@@ -32,14 +33,25 @@ function RootLayout() {
 
 function RootLayoutShell({ children }: { children: ReactNode }) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const { data: session, isPending } = useSession()
+  // Drives role-aware header. Anonymous users get null; signed-in non-onboarded
+  // users still get the name they entered, so we don't flash an empty header.
+  const { data: me } = useQuery({
+    ...meQueryOptions,
+    enabled: !!session?.user,
+  })
 
   async function handleSignOut() {
     await signOut()
     disconnectSocket()
+    queryClient.removeQueries({ queryKey: meQueryOptions.queryKey })
     router.invalidate()
     router.navigate({ to: '/' })
   }
+
+  const isProvider = me?.role === 'PROVIDER'
+  const displayName = me?.name ?? session?.user.name
 
   return (
     <div className="min-h-dvh flex flex-col">
@@ -50,19 +62,22 @@ function RootLayoutShell({ children }: { children: ReactNode }) {
             Bukit
           </Link>
           <nav className="flex items-center gap-2 text-sm">
+            {/* Anyone can book (providers can be customers too). */}
             <Button asChild variant="ghost" size="sm">
               <Link to="/services">Book</Link>
             </Button>
-            <Button asChild variant="ghost" size="sm">
-              <Link to="/provider">Provider</Link>
-            </Button>
             {!isPending && session?.user ? (
               <>
+                {isProvider && (
+                  <Button asChild variant="ghost" size="sm">
+                    <Link to="/provider/dashboard">Dashboard</Link>
+                  </Button>
+                )}
                 <Button asChild variant="ghost" size="sm">
                   <Link to="/bookings">My bookings</Link>
                 </Button>
                 <span className="hidden sm:inline text-xs text-muted-foreground px-2">
-                  {session.user.name}
+                  {displayName}
                 </span>
                 <Button variant="outline" size="sm" onClick={handleSignOut}>
                   Sign out

@@ -45,7 +45,10 @@ export const Route = createFileRoute('/book/$tierSlug')({
   beforeLoad: async ({ location }) => {
     const { data } = await getSession()
     if (!data) {
-      throw redirect({ to: '/signin', search: { redirect: location.href } })
+      throw redirect({
+        to: '/signin',
+        search: { redirect: location.href, as: 'customer' },
+      })
     }
   },
 })
