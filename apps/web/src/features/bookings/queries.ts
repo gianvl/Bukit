@@ -49,6 +49,8 @@ export interface BookingDetail extends BookingSummary {
   basePriceCentavos: number
   events: BookingEvent[]
   payment: { status: PaymentStatus; amountCentavos: number } | null
+  /** Provider contact details — only populated after PROVIDER_ASSIGNED. */
+  provider: { name: string; phoneNumber: string | null } | null
 }
 
 export const bookingsListQueryOptions = queryOptions({

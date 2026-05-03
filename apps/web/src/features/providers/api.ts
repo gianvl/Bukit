@@ -29,6 +29,8 @@ export interface AssignedBooking {
   totalCentavos: number
   serviceTier: { id: string; slug: string; name: string }
   customerName: string
+  /** Customer phone — only populated for accepted bookings (post-acceptance). */
+  customerPhoneNumber: string | null
   /** Distance from provider's current location in km (on-demand only). */
   distanceKm: number | null
 }

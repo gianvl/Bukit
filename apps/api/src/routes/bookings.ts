@@ -100,7 +100,26 @@ const BookingDetailDto = BookingSummaryDto.extend({
       amountCentavos: z.int().nonnegative(),
     })
     .nullable(),
+  /**
+   * Counterparty contact info, shared once the booking is past acceptance.
+   * Both customer and provider can see each other's name + phone for direct
+   * coordination. Null before PROVIDER_ASSIGNED.
+   */
+  provider: z
+    .object({
+      name: z.string(),
+      phoneNumber: z.string().nullable(),
+    })
+    .nullable(),
 })
+
+const SHARE_CONTACT_STATUSES = new Set([
+  'PROVIDER_ASSIGNED',
+  'EN_ROUTE',
+  'IN_PROGRESS',
+  'PENDING_CASH_CONFIRM',
+  'COMPLETED',
+])
 
 async function assertProviderForBooking(
   app: import('fastify').FastifyInstance,
@@ -687,15 +706,36 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (req) => {
       const session = requireSession(req)
+      // Allow access to the booking owner OR the assigned provider's user.
       const booking = await prisma.booking.findFirst({
-        where: { id: req.params.id, userId: session.user.id },
+        where: {
+          id: req.params.id,
+          OR: [
+            { userId: session.user.id },
+            { provider: { userId: session.user.id } },
+          ],
+        },
         include: {
           serviceTier: { select: { id: true, slug: true, name: true } },
           events: { orderBy: { createdAt: 'asc' } },
           payment: { select: { status: true, amountCentavos: true } },
+          provider: {
+            select: {
+              user: { select: { name: true, phoneNumber: true } },
+            },
+          },
         },
       })
       if (!booking) throw app.httpErrors.notFound('Booking not found')
+
+      const sharesContact = SHARE_CONTACT_STATUSES.has(booking.status)
+      const provider =
+        sharesContact && booking.provider?.user
+          ? {
+              name: booking.provider.user.name,
+              phoneNumber: booking.provider.user.phoneNumber,
+            }
+          : null
 
       return {
         ...toSummaryDto(booking),
@@ -714,6 +754,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
           createdAt: e.createdAt.toISOString(),
         })),
         payment: booking.payment,
+        provider,
       }
     },
   )

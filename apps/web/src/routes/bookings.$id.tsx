@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { Link, createFileRoute, redirect } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Banknote, CalendarClock, CheckCircle2, CreditCard, Loader2, MapPin, NotebookPen, XCircle, Zap } from 'lucide-react'
+import { Banknote, CalendarClock, CheckCircle2, CreditCard, Loader2, MapPin, NotebookPen, Phone, User, XCircle, Zap } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import {
   cancelBooking,
@@ -174,6 +174,8 @@ function BookingDetailPage() {
       </header>
 
       <CompletionCallout booking={booking} />
+
+      {booking.provider && <ProviderContactCard provider={booking.provider} />}
 
       <BookingMapPanel booking={booking} />
 
@@ -413,6 +415,49 @@ function formatLocationAge(iso: string | null): string {
   const m = Math.floor(seconds / 60)
   if (m < 60) return `${m}m ago`
   return `${Math.floor(m / 60)}h ago`
+}
+
+function ProviderContactCard({
+  provider,
+}: {
+  provider: NonNullable<BookingDetail['provider']>
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+          Your provider
+        </p>
+        <CardTitle className="font-display text-xl mt-2 inline-flex items-center gap-3">
+          <span className="inline-flex size-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <User className="size-4" />
+          </span>
+          {provider.name}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex items-center justify-between gap-3">
+        <span className="text-sm text-muted-foreground inline-flex items-center gap-2">
+          <Phone className="size-3.5" />
+          {provider.phoneNumber ? formatPhoneForDisplay(provider.phoneNumber) : 'No phone on file'}
+        </span>
+        {provider.phoneNumber && (
+          <Button asChild variant="outline" size="sm" className="rounded-full">
+            <a href={`tel:${provider.phoneNumber}`}>
+              <Phone className="size-3.5" />
+              Call
+            </a>
+          </Button>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function formatPhoneForDisplay(e164: string): string {
+  if (e164.startsWith('+639') && e164.length === 13) {
+    return `+63 ${e164.slice(3, 6)} ${e164.slice(6, 9)} ${e164.slice(9)}`
+  }
+  return e164
 }
 
 function CompletionCallout({ booking }: { booking: BookingDetail }) {

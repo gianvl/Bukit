@@ -22,6 +22,7 @@ import {
   CheckCircle2,
   MapPinOff,
   Navigation,
+  Phone,
   Play,
   Power,
   Zap,
@@ -224,6 +225,13 @@ function ProviderDashboard() {
       </section>
     </>
   )
+}
+
+function formatPhoneForDisplay(e164: string): string {
+  if (e164.startsWith('+639') && e164.length === 13) {
+    return `+63 ${e164.slice(3, 6)} ${e164.slice(6, 9)} ${e164.slice(9)}`
+  }
+  return e164
 }
 
 function isToday(iso: string): boolean {
@@ -458,11 +466,27 @@ function AssignedBookingRow({ booking }: { booking: AssignedBooking }) {
           )}
         </div>
       </CardHeader>
-      <CardContent className="flex items-center justify-between gap-3 text-sm">
-        <span className="text-muted-foreground inline-flex items-center gap-2">
-          <MapPin className="size-3.5" />
-          {booking.addressLine1}, {booking.city} · for {booking.customerName}
-        </span>
+      <CardContent className="flex items-center justify-between gap-3 text-sm flex-wrap">
+        <div className="space-y-1">
+          <span className="text-muted-foreground inline-flex items-center gap-2">
+            <MapPin className="size-3.5" />
+            {booking.addressLine1}, {booking.city}
+          </span>
+          {booking.customerPhoneNumber ? (
+            <a
+              href={`tel:${booking.customerPhoneNumber}`}
+              className="text-primary inline-flex items-center gap-2 hover:underline underline-offset-4"
+            >
+              <Phone className="size-3.5" />
+              {booking.customerName} · {formatPhoneForDisplay(booking.customerPhoneNumber)}
+            </a>
+          ) : (
+            <span className="text-muted-foreground inline-flex items-center gap-2">
+              <Phone className="size-3.5" />
+              {booking.customerName}
+            </span>
+          )}
+        </div>
         {status === 'PROVIDER_ASSIGNED' && (
           <Button size="sm" onClick={() => start.mutate()} disabled={start.isPending}>
             {start.isPending ? (

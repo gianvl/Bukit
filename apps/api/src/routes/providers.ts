@@ -67,6 +67,8 @@ const AssignedBookingDto = z.object({
   totalCentavos: z.int().nonnegative(),
   serviceTier: z.object({ id: z.string(), slug: z.string(), name: z.string() }),
   customerName: z.string(),
+  /** Customer phone — only present for accepted bookings (post-acceptance). */
+  customerPhoneNumber: z.string().nullable(),
   /** Distance from the caller's current location in km (only set for on-demand). */
   distanceKm: z.number().nullable(),
 })
@@ -304,10 +306,16 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
         orderBy: { scheduledAt: 'asc' },
         include: {
           serviceTier: { select: { id: true, slug: true, name: true } },
-          user: { select: { name: true } },
+          user: { select: { name: true, phoneNumber: true } },
         },
       })
-      return { bookings: rows.map(toAssignedDto) }
+      // Reveal customer phone — these are bookings already assigned to the caller.
+      return {
+        bookings: rows.map((b) => ({
+          ...toAssignedDto(b),
+          customerPhoneNumber: b.user.phoneNumber,
+        })),
+      }
     },
   )
 }
@@ -378,6 +386,8 @@ function toAssignedDto(b: BookingRow, distanceKm: number | null = null) {
     totalCentavos: b.totalCentavos,
     serviceTier: b.serviceTier,
     customerName: b.user.name,
+    // available-bookings call sites pre-acceptance — phone redacted by default.
+    customerPhoneNumber: null as string | null,
     distanceKm,
   }
 }
