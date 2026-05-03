@@ -41,6 +41,9 @@ function RootLayout() {
             </Button>
             {!isPending && session?.user ? (
               <>
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/bookings">My bookings</Link>
+                </Button>
                 <span className="hidden sm:inline text-xs text-muted-foreground px-2">
                   {session.user.name}
                 </span>
