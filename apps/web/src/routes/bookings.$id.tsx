@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { ApiError } from '@/lib/api'
 import { BookingMap } from '@/components/booking-map'
+import { ChatPanel } from '@/components/chat-panel'
 import { getSocket, type ProviderLocationPayload } from '@/lib/socket'
 import type { ProviderLocation } from '@/features/bookings/queries'
 import {
@@ -199,6 +200,10 @@ function BookingDetailPage() {
       )}
       {booking.customer && (
         <CounterpartyCard label="Customer" party={booking.customer} />
+      )}
+
+      {chatPanelEligible(booking.status as BookingStatus) && (
+        <ChatPanel bookingId={booking.id} />
       )}
 
       <BookingMapPanel booking={booking} />
@@ -482,6 +487,19 @@ function formatPhoneForDisplay(e164: string): string {
     return `+63 ${e164.slice(3, 6)} ${e164.slice(6, 9)} ${e164.slice(9)}`
   }
   return e164
+}
+
+const CHAT_PANEL_STATUSES: BookingStatus[] = [
+  'PROVIDER_ASSIGNED',
+  'EN_ROUTE',
+  'IN_PROGRESS',
+  'PENDING_CASH_CONFIRM',
+  'COMPLETED',
+]
+
+/** Show the chat panel from acceptance through the post-completion wind-down. */
+function chatPanelEligible(status: BookingStatus): boolean {
+  return CHAT_PANEL_STATUSES.includes(status)
 }
 
 function ProviderActionsPanel({ booking }: { booking: BookingDetail }) {
