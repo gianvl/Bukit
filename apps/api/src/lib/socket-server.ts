@@ -1,49 +1,79 @@
 import type { FastifyInstance } from 'fastify'
 import { Server as SocketIOServer, type Socket } from 'socket.io'
 import { auth, type Session } from './auth.js'
+import { prisma } from './prisma.js'
+import { haversineKm } from './distance.js'
 import { env } from '../env.js'
 
-/**
- * Augments Socket.IO data with our typed session.
- * Attached during the auth middleware below; consumers can read it directly.
- */
+/* ─── Typed events ──────────────────────────────────────────────────── */
+
+interface AckOk {
+  ok: true
+}
+interface AckErr {
+  ok: false
+  error: string
+}
+type Ack = AckOk | AckErr
+
+interface ProviderLocationPayload {
+  bookingId: string
+  latitude: number
+  longitude: number
+  lastLocationAt: string
+  distanceKm: number | null
+}
+
+export interface ClientToServerEvents {
+  ping: (cb: (resp: { pong: number }) => void) => void
+  /** Provider streams their position; server persists + broadcasts to assigned booking rooms. */
+  'provider:location': (
+    data: { latitude: number; longitude: number },
+    ack?: (resp: Ack) => void,
+  ) => void
+  /** Subscribe to a booking room (server validates owner or assigned provider). */
+  'booking:join': (data: { bookingId: string }, ack?: (resp: Ack) => void) => void
+  /** Stop receiving updates for a booking room. */
+  'booking:leave': (data: { bookingId: string }) => void
+}
+
+export interface ServerToClientEvents {
+  'provider:location': (data: ProviderLocationPayload) => void
+}
+
 export interface SocketData {
   session: Session
 }
 
-/** Strongly-typed socket alias used by event handlers. */
-export type AppSocket = Socket<DefaultEvents, DefaultEvents, DefaultEvents, SocketData>
+export type AppServer = SocketIOServer<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  Record<string, never>,
+  SocketData
+>
 
-interface DefaultEvents {
-  ping: (cb: (resp: { pong: number }) => void) => void
-}
+export type AppSocket = Socket<
+  ClientToServerEvents,
+  ServerToClientEvents,
+  Record<string, never>,
+  SocketData
+>
 
-let ioRef: SocketIOServer | null = null
+/* ─── Server lifecycle ──────────────────────────────────────────────── */
 
-/**
- * Returns the Socket.IO server instance (after setupSocketServer has run).
- * Throws if called before init — surfaces wiring bugs early.
- */
-export function getIo(): SocketIOServer {
+let ioRef: AppServer | null = null
+
+export function getIo(): AppServer {
   if (!ioRef) throw new Error('Socket.IO not initialized — call setupSocketServer first')
   return ioRef
 }
 
-/**
- * Mounts Socket.IO on Fastify's underlying HTTP server.
- *
- * Auth: every connection's handshake headers are run through Better-Auth's
- * getSession, just like a normal HTTP request. Anonymous connections are
- * rejected so we never have an unauthenticated socket on the wire.
- */
-export function setupSocketServer(app: FastifyInstance): SocketIOServer {
-  const io = new SocketIOServer(app.server, {
+export function setupSocketServer(app: FastifyInstance): AppServer {
+  const io: AppServer = new SocketIOServer(app.server, {
     cors: {
       origin: env.WEB_ORIGIN,
       credentials: true,
     },
-    // Production tip: set transports: ['websocket'] once a load balancer with
-    // sticky sessions is in place. Default polling-then-websocket works in dev.
   })
 
   io.use(async (socket, next) => {
@@ -54,17 +84,42 @@ export function setupSocketServer(app: FastifyInstance): SocketIOServer {
     }
     const session = await auth.api.getSession({ headers })
     if (!session) return next(new Error('Unauthorized'))
-    ;(socket.data as SocketData).session = session
+    socket.data.session = session
     next()
   })
 
-  io.on('connection', (socket: AppSocket) => {
+  io.on('connection', (socket) => {
     const userId = socket.data.session.user.id
     app.log.debug({ userId, socketId: socket.id }, 'socket connected')
 
-    // Sanity ping for client liveness checks.
     socket.on('ping', (cb) => {
       if (typeof cb === 'function') cb({ pong: Date.now() })
+    })
+
+    socket.on('provider:location', (data, ack) => {
+      handleProviderLocation(io, socket, data).then(
+        () => ack?.({ ok: true }),
+        (err: unknown) =>
+          ack?.({
+            ok: false,
+            error: err instanceof Error ? err.message : 'unknown error',
+          }),
+      )
+    })
+
+    socket.on('booking:join', (data, ack) => {
+      handleBookingJoin(socket, data).then(
+        () => ack?.({ ok: true }),
+        (err: unknown) =>
+          ack?.({
+            ok: false,
+            error: err instanceof Error ? err.message : 'unknown error',
+          }),
+      )
+    })
+
+    socket.on('booking:leave', (data) => {
+      void socket.leave(`booking:${data.bookingId}`)
     })
 
     socket.on('disconnect', (reason) => {
@@ -74,4 +129,93 @@ export function setupSocketServer(app: FastifyInstance): SocketIOServer {
 
   ioRef = io
   return io
+}
+
+/* ─── Handlers ──────────────────────────────────────────────────────── */
+
+async function handleProviderLocation(
+  io: AppServer,
+  socket: AppSocket,
+  data: { latitude: number; longitude: number },
+) {
+  const userId = socket.data.session.user.id
+
+  if (
+    typeof data.latitude !== 'number' ||
+    typeof data.longitude !== 'number' ||
+    Math.abs(data.latitude) > 90 ||
+    Math.abs(data.longitude) > 180
+  ) {
+    throw new Error('Invalid coordinates')
+  }
+
+  const profile = await prisma.providerProfile.findUnique({
+    where: { userId },
+    select: { id: true },
+  })
+  if (!profile) throw new Error('Not a provider')
+
+  const now = new Date()
+  await prisma.providerProfile.update({
+    where: { id: profile.id },
+    data: {
+      currentLatitude: data.latitude,
+      currentLongitude: data.longitude,
+      lastLocationAt: now,
+    },
+  })
+
+  // Broadcast to every booking room this provider is currently working on.
+  const activeBookings = await prisma.booking.findMany({
+    where: {
+      providerId: profile.id,
+      status: { in: ['PROVIDER_ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'] },
+    },
+    select: { id: true, latitude: true, longitude: true },
+  })
+
+  const lastLocationAt = now.toISOString()
+  for (const b of activeBookings) {
+    const distanceKm =
+      b.latitude != null && b.longitude != null
+        ? haversineKm(
+            { lat: data.latitude, lng: data.longitude },
+            { lat: b.latitude, lng: b.longitude },
+          )
+        : null
+    io.to(`booking:${b.id}`).emit('provider:location', {
+      bookingId: b.id,
+      latitude: data.latitude,
+      longitude: data.longitude,
+      lastLocationAt,
+      distanceKm,
+    })
+  }
+}
+
+async function handleBookingJoin(
+  socket: AppSocket,
+  data: { bookingId: string },
+) {
+  if (typeof data.bookingId !== 'string' || !data.bookingId) {
+    throw new Error('Invalid bookingId')
+  }
+  const userId = socket.data.session.user.id
+  const booking = await prisma.booking.findUnique({
+    where: { id: data.bookingId },
+    select: { id: true, userId: true, providerId: true },
+  })
+  if (!booking) throw new Error('Booking not found')
+
+  let allowed = booking.userId === userId
+  if (!allowed && booking.providerId) {
+    const profile = await prisma.providerProfile.findUnique({
+      where: { userId },
+      select: { id: true },
+    })
+    allowed = profile?.id === booking.providerId
+  }
+  if (!allowed) throw new Error('Forbidden')
+
+  await socket.join(`booking:${booking.id}`)
 }

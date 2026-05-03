@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { setProviderLocation } from './api'
+import { getSocket } from '@/lib/socket'
 
 export type ShareLocationStatus =
   | 'idle' // not currently sharing
@@ -11,12 +11,12 @@ export type ShareLocationStatus =
 const THROTTLE_MS = 10_000
 
 /**
- * While `active` is true, watches the browser's geolocation and POSTs updates
- * to /providers/me/location at most once every 10 seconds.
+ * While `active` is true, watches the browser's geolocation and pushes updates
+ * to the server over the Socket.IO connection (no HTTP polling).
  *
- * We use watchPosition (not setInterval + getCurrentPosition) so the browser
- * surfaces device-driven updates (compass, walking, vehicle) without burning
- * battery on idle polls. The throttle keeps server load bounded.
+ * Throttled to ≥10s between emits. The server persists each update to Postgres
+ * and broadcasts to any subscribed booking room — customers see the pin move
+ * in real time without their own polling.
  */
 export function useShareLocation(active: boolean) {
   const [status, setStatus] = useState<ShareLocationStatus>('idle')
@@ -34,28 +34,27 @@ export function useShareLocation(active: boolean) {
     }
 
     setStatus('requesting')
+    const socket = getSocket()
+
     const watchId = navigator.geolocation.watchPosition(
-      async (pos) => {
+      (pos) => {
         const now = Date.now()
         if (now - lastSentRef.current < THROTTLE_MS) return
         lastSentRef.current = now
-        try {
-          await setProviderLocation({
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-          })
-          setStatus('sharing')
-          setLastUpdateAt(new Date())
-        } catch {
-          // Swallow — we'll retry on the next position event.
-        }
+        socket.emit(
+          'provider:location',
+          { latitude: pos.coords.latitude, longitude: pos.coords.longitude },
+          (resp) => {
+            if (resp?.ok) {
+              setStatus('sharing')
+              setLastUpdateAt(new Date())
+            }
+            // On error we stay in 'requesting' until the next fix succeeds.
+          },
+        )
       },
       (err) => {
-        if (err.code === err.PERMISSION_DENIED) {
-          setStatus('denied')
-        }
-        // Other errors (timeout, position unavailable) keep us in 'requesting'
-        // so the indicator stays neutral until the next successful fix.
+        if (err.code === err.PERMISSION_DENIED) setStatus('denied')
       },
       { enableHighAccuracy: true, maximumAge: 5_000, timeout: 30_000 },
     )

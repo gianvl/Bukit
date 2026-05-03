@@ -22,6 +22,8 @@ import {
 } from '@/components/ui/alert-dialog'
 import { ApiError } from '@/lib/api'
 import { BookingMap } from '@/components/booking-map'
+import { getSocket, type ProviderLocationPayload } from '@/lib/socket'
+import type { ProviderLocation } from '@/features/bookings/queries'
 import {
   bookingDetailQueryOptions,
   bookingsListQueryOptions,
@@ -280,13 +282,42 @@ const PROVIDER_TRACKING_STATES: BookingStatus[] = [
 ]
 
 function BookingMapPanel({ booking }: { booking: BookingDetail }) {
+  const queryClient = useQueryClient()
   const showProviderPin = PROVIDER_TRACKING_STATES.includes(
     booking.status as BookingStatus,
   )
+  const queryKey = providerLocationQueryOptions(booking.id).queryKey
   const { data: providerLoc } = useQuery({
     ...providerLocationQueryOptions(booking.id),
     enabled: showProviderPin,
   })
+
+  // Subscribe to live provider location pushes for this booking.
+  useEffect(() => {
+    if (!showProviderPin) return
+    const socket = getSocket()
+    const onLocation = (payload: ProviderLocationPayload) => {
+      if (payload.bookingId !== booking.id) return
+      queryClient.setQueryData<ProviderLocation>(queryKey, {
+        latitude: payload.latitude,
+        longitude: payload.longitude,
+        lastLocationAt: payload.lastLocationAt,
+        distanceKm: payload.distanceKm,
+      })
+    }
+    const join = () => {
+      socket.emit('booking:join', { bookingId: booking.id })
+    }
+    socket.on('provider:location', onLocation)
+    socket.on('connect', join)
+    if (socket.connected) join()
+
+    return () => {
+      socket.off('provider:location', onLocation)
+      socket.off('connect', join)
+      socket.emit('booking:leave', { bookingId: booking.id })
+    }
+  }, [showProviderPin, booking.id, queryKey, queryClient])
 
   const hasBookingPin = booking.latitude !== null && booking.longitude !== null
   const hasProviderPin =

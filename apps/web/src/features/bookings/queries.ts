@@ -76,6 +76,7 @@ export const providerLocationQueryOptions = (id: string) =>
   queryOptions({
     queryKey: ['bookings', id, 'provider-location'] as const,
     queryFn: () => api.get<ProviderLocation>(`/bookings/${id}/provider-location`),
-    staleTime: 4_000,
-    refetchInterval: 5_000,
+    // Polling removed in 20b — Socket.IO pushes updates into the cache.
+    // The query still primes initial state on page load.
+    staleTime: 30_000,
   })
