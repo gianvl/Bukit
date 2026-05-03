@@ -29,17 +29,21 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     }
   }
 
+  // Only set Content-Type when we actually have a JSON body. Fastify rejects
+  // empty bodies sent with application/json (e.g. POST /bookings/:id/accept).
+  const hasBody = body !== undefined
+  const baseHeaders: Record<string, string> = {
+    Accept: 'application/json',
+    ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
+  }
+
   let res: Response
   try {
     res = await fetch(url, {
       ...rest,
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        ...headers,
-      },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers: { ...baseHeaders, ...headers },
+      body: hasBody ? JSON.stringify(body) : undefined,
     })
   } catch (err) {
     // Network-level failure (server down, DNS, offline). Map to a typed
