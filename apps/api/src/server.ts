@@ -15,6 +15,7 @@ import { healthRoutes } from './routes/health.js'
 import { meRoutes } from './routes/me.js'
 import { serviceTierRoutes } from './routes/service-tiers.js'
 import { bookingRoutes } from './routes/bookings.js'
+import { providerRoutes } from './routes/providers.js'
 import { paymentRoutes } from './routes/payments.js'
 import { webhookRoutes } from './routes/webhooks.js'
 
@@ -53,6 +54,7 @@ export async function buildApp() {
   await app.register(meRoutes)
   await app.register(serviceTierRoutes)
   await app.register(bookingRoutes)
+  await app.register(providerRoutes)
   await app.register(paymentRoutes)
   await app.register(webhookRoutes)
 
