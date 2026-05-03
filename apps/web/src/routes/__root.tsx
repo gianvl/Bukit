@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ErrorScreen } from '@/components/error-screen'
+import { NotificationModal } from '@/components/notification-modal'
 import { Toaster } from '@/components/ui/sonner'
 import { signOut, useSession } from '@/lib/auth-client'
 import { disconnectSocket } from '@/lib/socket'
@@ -95,6 +96,7 @@ function RootLayoutShell({ children }: { children: ReactNode }) {
 
       <main className="flex-1">{children}</main>
 
+      <NotificationModal />
       <Toaster richColors position="top-right" />
       {import.meta.env.DEV && <TanStackRouterDevtools position="bottom-right" />}
     </div>
