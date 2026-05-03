@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: bukit-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bukit
+      POSTGRES_PASSWORD: bukit
+      POSTGRES_DB: bukit
+    ports:
+      # Host port is 5435 to avoid collision with other local Postgres containers.
+      - "5435:5432"
+    volumes:
+      - bukit-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bukit -d bukit"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  bukit-db-data:

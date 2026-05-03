@@ -1,0 +1,203 @@
+// Bukit — service booking platform schema
+// Money is stored as integer centavos (PHP * 100) to avoid float drift.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  PROVIDER
+  ADMIN
+}
+
+enum ProviderStatus {
+  PENDING_KYC
+  ACTIVE
+  SUSPENDED
+  REJECTED
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  PROVIDER_ASSIGNED
+  EN_ROUTE
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED_BY_USER
+  CANCELLED_BY_PROVIDER
+  REFUNDED
+}
+
+enum BookingEventType {
+  CREATED
+  PAYMENT_AUTHORIZED
+  PROVIDER_ASSIGNED
+  EN_ROUTE
+  ARRIVED
+  STARTED
+  COMPLETED
+  CANCELLED
+  REFUNDED
+  NOTE
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id             String   @id @default(cuid(2))
+  email          String   @unique
+  hashedPassword String
+  fullName       String
+  phone          String?
+  role           UserRole @default(USER)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  providerProfile ProviderProfile?
+  bookings        Booking[]        @relation("BookingsByUser")
+  reviews         Review[]         @relation("ReviewsByUser")
+
+  @@index([role])
+}
+
+model ProviderProfile {
+  id          String         @id @default(cuid(2))
+  userId      String         @unique
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      ProviderStatus @default(PENDING_KYC)
+  bio         String?
+  ratingAvg   Float          @default(0)
+  ratingCount Int            @default(0)
+
+  // KYC
+  govIdType     String?
+  govIdNumber   String?
+  govIdImageUrl String?
+  selfieUrl     String?
+
+  // Service area (PH cities the provider operates in)
+  cities String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[] @relation("BookingsByProvider")
+
+  @@index([status])
+}
+
+model ServiceTier {
+  id                  String   @id @default(cuid(2))
+  slug                String   @unique
+  name                String
+  description         String
+  basePriceCentavos   Int
+  estimatedMinutes    Int
+  sortOrder           Int      @default(0)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  bookings Booking[]
+}
+
+model Booking {
+  id            String        @id @default(cuid(2))
+  userId        String
+  user          User          @relation("BookingsByUser", fields: [userId], references: [id])
+  providerId    String?
+  provider      ProviderProfile? @relation("BookingsByProvider", fields: [providerId], references: [id])
+  serviceTierId String
+  serviceTier   ServiceTier   @relation(fields: [serviceTierId], references: [id])
+
+  status        BookingStatus @default(PENDING_PAYMENT)
+  scheduledAt   DateTime
+  durationMinutes Int
+
+  // Address snapshot at booking time
+  addressLine1 String
+  addressLine2 String?
+  barangay     String?
+  city         String
+  province     String   @default("Metro Manila")
+  postalCode   String?
+  latitude     Float?
+  longitude    Float?
+  notes        String?
+
+  // Money snapshot
+  basePriceCentavos Int
+  totalCentavos     Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events   BookingEvent[]
+  payment  Payment?
+  review   Review?
+
+  @@index([userId])
+  @@index([providerId])
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+model BookingEvent {
+  id        String           @id @default(cuid(2))
+  bookingId String
+  booking   Booking          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  type      BookingEventType
+  payload   Json?
+  actorId   String?
+  createdAt DateTime         @default(now())
+
+  @@index([bookingId, createdAt])
+}
+
+model Payment {
+  id        String        @id @default(cuid(2))
+  bookingId String        @unique
+  booking   Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  status    PaymentStatus @default(PENDING)
+  amountCentavos Int
+  currency  String        @default("PHP")
+
+  // HelixPay references
+  helixPayCheckoutId String? @unique
+  helixPayPaymentId  String? @unique
+  helixPayPayload    Json?
+
+  authorizedAt DateTime?
+  capturedAt   DateTime?
+  refundedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([status])
+}
+
+model Review {
+  id        String   @id @default(cuid(2))
+  bookingId String   @unique
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation("ReviewsByUser", fields: [userId], references: [id])
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
