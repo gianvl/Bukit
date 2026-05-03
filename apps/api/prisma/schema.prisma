@@ -94,6 +94,8 @@ model User {
   phoneNumberVerified Boolean  @default(false)
   // Custom fields registered via Better-Auth additionalFields
   role                UserRole @default(USER)
+  /** Set when the user completes the onboarding flow (name + role chosen). */
+  onboardedAt         DateTime?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
