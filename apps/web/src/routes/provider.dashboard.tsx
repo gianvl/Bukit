@@ -6,9 +6,14 @@ import {
   assignedBookingsQueryOptions,
   availableBookingsQueryOptions,
   providerProfileQueryOptions,
+  setAvailabilityMode,
   type AssignedBooking,
+  type AvailabilityMode,
+  type ProviderProfile,
   type ProviderStatus,
 } from '@/features/providers/api'
+import { Power, Calendar, Zap } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { ApiError } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { getSession } from '@/lib/auth-client'
@@ -66,6 +71,8 @@ function ProviderDashboard() {
         </div>
         <Badge variant={meta.tone}>{meta.label}</Badge>
       </header>
+
+      {profile.status === 'ACTIVE' && <AvailabilityCard profile={profile} />}
 
       {profile.status === 'PENDING_KYC' && (
         <Card>
@@ -149,6 +156,114 @@ function ProviderDashboard() {
         </CardContent>
       </Card>
     </section>
+  )
+}
+
+const AVAILABILITY_OPTIONS: Array<{
+  value: AvailabilityMode
+  label: string
+  description: string
+  Icon: typeof Power
+}> = [
+  {
+    value: 'OFFLINE',
+    label: 'Off',
+    description: 'Not accepting any bookings.',
+    Icon: Power,
+  },
+  {
+    value: 'SCHEDULED_ONLY',
+    label: 'Scheduled only',
+    description: 'Only receive bookings planned in advance.',
+    Icon: Calendar,
+  },
+  {
+    value: 'FULL',
+    label: 'On-demand + scheduled',
+    description: 'Receive on-demand pings and scheduled bookings.',
+    Icon: Zap,
+  },
+]
+
+function AvailabilityCard({ profile }: { profile: ProviderProfile }) {
+  const queryClient = useQueryClient()
+  const setMode = useMutation({
+    mutationFn: setAvailabilityMode,
+    onMutate: async (mode) => {
+      await queryClient.cancelQueries({ queryKey: providerProfileQueryOptions.queryKey })
+      const previous = queryClient.getQueryData<ProviderProfile | null>(
+        providerProfileQueryOptions.queryKey,
+      )
+      if (previous) {
+        queryClient.setQueryData<ProviderProfile>(providerProfileQueryOptions.queryKey, {
+          ...previous,
+          availabilityMode: mode,
+        })
+      }
+      return { previous }
+    },
+    onError: (_err, _mode, ctx) => {
+      if (ctx?.previous !== undefined) {
+        queryClient.setQueryData(providerProfileQueryOptions.queryKey, ctx.previous)
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: providerProfileQueryOptions.queryKey })
+      queryClient.invalidateQueries({ queryKey: availableBookingsQueryOptions.queryKey })
+    },
+  })
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Availability</CardTitle>
+        <CardDescription>Control which bookings you receive.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div
+          role="radiogroup"
+          aria-label="Availability mode"
+          className="grid gap-2 sm:grid-cols-3"
+        >
+          {AVAILABILITY_OPTIONS.map(({ value, label, description, Icon }) => {
+            const active = profile.availabilityMode === value
+            return (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                disabled={setMode.isPending}
+                onClick={() => {
+                  if (!active) setMode.mutate(value)
+                }}
+                className={cn(
+                  'group relative rounded-xl border p-4 text-left transition-colors',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                  active
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border hover:border-primary/40 hover:bg-muted/40',
+                  setMode.isPending && 'opacity-60 cursor-wait',
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <Icon
+                    className={cn('size-4', active ? 'text-primary' : 'text-muted-foreground')}
+                  />
+                  {active && (
+                    <span className="size-2 rounded-full bg-primary" aria-hidden />
+                  )}
+                </div>
+                <div className="mt-3 text-sm font-medium">{label}</div>
+                <div className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                  {description}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

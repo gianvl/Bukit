@@ -2,10 +2,12 @@ import { queryOptions } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 
 export type ProviderStatus = 'PENDING_KYC' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED'
+export type AvailabilityMode = 'OFFLINE' | 'SCHEDULED_ONLY' | 'FULL'
 
 export interface ProviderProfile {
   id: string
   status: ProviderStatus
+  availabilityMode: AvailabilityMode
   bio: string | null
   ratingAvg: number
   ratingCount: number
@@ -16,6 +18,8 @@ export interface ProviderProfile {
 export interface AssignedBooking {
   id: string
   status: string
+  bookingMode: 'ON_DEMAND' | 'SCHEDULED'
+  paymentMethod: 'ONLINE' | 'CASH'
   scheduledAt: string
   durationMinutes: number
   addressLine1: string
@@ -74,4 +78,8 @@ export interface ApplyProviderInput {
 
 export function applyAsProvider(input: ApplyProviderInput) {
   return api.post<ProviderProfile>('/providers/apply', input)
+}
+
+export function setAvailabilityMode(mode: AvailabilityMode) {
+  return api.patch<ProviderProfile>('/providers/me/availability', { availabilityMode: mode })
 }

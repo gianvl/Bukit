@@ -4,10 +4,12 @@ import { prisma } from '../lib/prisma.js'
 import { requireSession } from '../lib/auth-fastify.js'
 
 const ProviderStatusEnum = z.enum(['PENDING_KYC', 'ACTIVE', 'SUSPENDED', 'REJECTED'])
+const AvailabilityModeEnum = z.enum(['OFFLINE', 'SCHEDULED_ONLY', 'FULL'])
 
 const ProviderProfileDto = z.object({
   id: z.string(),
   status: ProviderStatusEnum,
+  availabilityMode: AvailabilityModeEnum,
   bio: z.string().nullable(),
   ratingAvg: z.number(),
   ratingCount: z.int().nonnegative(),
@@ -18,6 +20,10 @@ const ProviderProfileDto = z.object({
 const ApplyBody = z.object({
   bio: z.string().max(500).optional(),
   cities: z.array(z.string().min(1).max(100)).max(20).optional(),
+})
+
+const SetAvailabilityBody = z.object({
+  availabilityMode: AvailabilityModeEnum,
 })
 
 const AssignedBookingDto = z.object({
@@ -35,6 +41,8 @@ const AssignedBookingDto = z.object({
     'CANCELLED_BY_PROVIDER',
     'REFUNDED',
   ]),
+  bookingMode: z.enum(['ON_DEMAND', 'SCHEDULED']),
+  paymentMethod: z.enum(['ONLINE', 'CASH']),
   scheduledAt: z.iso.datetime(),
   durationMinutes: z.int().positive(),
   addressLine1: z.string(),
@@ -100,9 +108,44 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
   )
 
   /**
-   * Bookings available to the caller for acceptance: status=CONFIRMED,
-   * unassigned, and in one of the cities on the caller's profile.
-   * (Cities are matched case-insensitively.)
+   * Set the caller's availability mode.
+   *   OFFLINE        — no bookings of any kind
+   *   SCHEDULED_ONLY — receive only scheduled bookings (no on-demand pings)
+   *   FULL           — receive both
+   */
+  app.patch(
+    '/providers/me/availability',
+    {
+      schema: {
+        body: SetAvailabilityBody,
+        response: { 200: ProviderProfileDto },
+      },
+    },
+    async (req) => {
+      const session = requireSession(req)
+      const profile = await prisma.providerProfile.findUnique({
+        where: { userId: session.user.id },
+      })
+      if (!profile) throw app.httpErrors.forbidden('Not a provider')
+
+      const updated = await prisma.providerProfile.update({
+        where: { id: profile.id },
+        data: { availabilityMode: req.body.availabilityMode },
+      })
+      return toDto(updated)
+    },
+  )
+
+  /**
+   * Bookings available to the caller for acceptance:
+   *   - status CONFIRMED (cash, no upfront payment) or IN_ESCROW (online, paid)
+   *   - unassigned
+   *   - in one of the caller's cities (case-insensitive)
+   *
+   * Filtered by availabilityMode:
+   *   OFFLINE        → empty
+   *   SCHEDULED_ONLY → exclude bookingMode = ON_DEMAND
+   *   FULL           → both
    */
   app.get(
     '/providers/me/available-bookings',
@@ -115,17 +158,21 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
       const session = requireSession(req)
       const profile = await prisma.providerProfile.findUnique({
         where: { userId: session.user.id },
-        select: { id: true, status: true, cities: true },
+        select: { id: true, status: true, cities: true, availabilityMode: true },
       })
       if (!profile) throw app.httpErrors.forbidden('Not a provider')
       if (profile.status !== 'ACTIVE') return { bookings: [] }
+      if (profile.availabilityMode === 'OFFLINE') return { bookings: [] }
       if (profile.cities.length === 0) return { bookings: [] }
 
       const rows = await prisma.booking.findMany({
         where: {
-          status: 'CONFIRMED',
+          status: { in: ['CONFIRMED', 'IN_ESCROW'] },
           providerId: null,
           city: { in: profile.cities, mode: 'insensitive' },
+          ...(profile.availabilityMode === 'SCHEDULED_ONLY'
+            ? { bookingMode: 'SCHEDULED' }
+            : {}),
         },
         orderBy: { scheduledAt: 'asc' },
         include: {
@@ -133,19 +180,7 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
           user: { select: { name: true } },
         },
       })
-      return {
-        bookings: rows.map((b) => ({
-          id: b.id,
-          status: b.status,
-          scheduledAt: b.scheduledAt.toISOString(),
-          durationMinutes: b.durationMinutes,
-          addressLine1: b.addressLine1,
-          city: b.city,
-          totalCentavos: b.totalCentavos,
-          serviceTier: b.serviceTier,
-          customerName: b.user.name,
-        })),
-      }
+      return { bookings: rows.map(toAssignedDto) }
     },
   )
 
@@ -172,20 +207,7 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
           user: { select: { name: true } },
         },
       })
-
-      return {
-        bookings: rows.map((b) => ({
-          id: b.id,
-          status: b.status,
-          scheduledAt: b.scheduledAt.toISOString(),
-          durationMinutes: b.durationMinutes,
-          addressLine1: b.addressLine1,
-          city: b.city,
-          totalCentavos: b.totalCentavos,
-          serviceTier: b.serviceTier,
-          customerName: b.user.name,
-        })),
-      }
+      return { bookings: rows.map(toAssignedDto) }
     },
   )
 }
@@ -193,6 +215,7 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
 type ProfileRow = {
   id: string
   status: 'PENDING_KYC' | 'ACTIVE' | 'SUSPENDED' | 'REJECTED'
+  availabilityMode: 'OFFLINE' | 'SCHEDULED_ONLY' | 'FULL'
   bio: string | null
   ratingAvg: number
   ratingCount: number
@@ -204,10 +227,52 @@ function toDto(p: ProfileRow) {
   return {
     id: p.id,
     status: p.status,
+    availabilityMode: p.availabilityMode,
     bio: p.bio,
     ratingAvg: p.ratingAvg,
     ratingCount: p.ratingCount,
     cities: p.cities,
     createdAt: p.createdAt.toISOString(),
+  }
+}
+
+type BookingRow = {
+  id: string
+  status:
+    | 'PENDING_PAYMENT'
+    | 'IN_ESCROW'
+    | 'CONFIRMED'
+    | 'PROVIDER_ASSIGNED'
+    | 'EN_ROUTE'
+    | 'IN_PROGRESS'
+    | 'PENDING_CASH_CONFIRM'
+    | 'COMPLETED'
+    | 'CANCELLED_BY_USER'
+    | 'CANCELLED_BY_PROVIDER'
+    | 'REFUNDED'
+  bookingMode: 'ON_DEMAND' | 'SCHEDULED'
+  paymentMethod: 'ONLINE' | 'CASH'
+  scheduledAt: Date
+  durationMinutes: number
+  addressLine1: string
+  city: string
+  totalCentavos: number
+  serviceTier: { id: string; slug: string; name: string }
+  user: { name: string }
+}
+
+function toAssignedDto(b: BookingRow) {
+  return {
+    id: b.id,
+    status: b.status,
+    bookingMode: b.bookingMode,
+    paymentMethod: b.paymentMethod,
+    scheduledAt: b.scheduledAt.toISOString(),
+    durationMinutes: b.durationMinutes,
+    addressLine1: b.addressLine1,
+    city: b.city,
+    totalCentavos: b.totalCentavos,
+    serviceTier: b.serviceTier,
+    customerName: b.user.name,
   }
 }
