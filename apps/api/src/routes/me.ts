@@ -10,23 +10,27 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
         response: {
           200: z.object({
             id: z.string(),
-            email: z.string(),
             name: z.string(),
             role: z.enum(['USER', 'PROVIDER', 'ADMIN']),
-            phone: z.string().nullable(),
+            phoneNumber: z.string().nullable(),
+            phoneNumberVerified: z.boolean(),
           }),
         },
       },
     },
     async (req) => {
       const { user } = requireSession(req)
-      const u = user as typeof user & { role?: string; phone?: string | null }
+      const u = user as typeof user & {
+        role?: string
+        phoneNumber?: string | null
+        phoneNumberVerified?: boolean
+      }
       return {
         id: u.id,
-        email: u.email,
         name: u.name,
         role: (u.role as 'USER' | 'PROVIDER' | 'ADMIN') ?? 'USER',
-        phone: u.phone ?? null,
+        phoneNumber: u.phoneNumber ?? null,
+        phoneNumberVerified: u.phoneNumberVerified ?? false,
       }
     },
   )
