@@ -3,10 +3,12 @@ import type { BookingStatus, PaymentStatus } from './queries'
 
 const BOOKING_LABELS: Record<BookingStatus, { label: string; tone: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   PENDING_PAYMENT: { label: 'Awaiting payment', tone: 'outline' },
+  IN_ESCROW: { label: 'Paid · awaiting match', tone: 'secondary' },
   CONFIRMED: { label: 'Confirmed', tone: 'secondary' },
   PROVIDER_ASSIGNED: { label: 'Provider assigned', tone: 'secondary' },
   EN_ROUTE: { label: 'On the way', tone: 'secondary' },
   IN_PROGRESS: { label: 'In progress', tone: 'default' },
+  PENDING_CASH_CONFIRM: { label: 'Awaiting cash confirm', tone: 'outline' },
   COMPLETED: { label: 'Completed', tone: 'default' },
   CANCELLED_BY_USER: { label: 'Cancelled', tone: 'destructive' },
   CANCELLED_BY_PROVIDER: { label: 'Cancelled by provider', tone: 'destructive' },

@@ -45,9 +45,14 @@ const AddressInput = z.object({
   longitude: z.number().min(-180).max(180).optional(),
 })
 
+const PaymentMethodEnum = z.enum(['ONLINE', 'CASH'])
+const BookingModeEnum = z.enum(['ON_DEMAND', 'SCHEDULED'])
+
 const CreateBookingBody = z.object({
   serviceTierId: z.string().min(1),
   scheduledAt: z.iso.datetime(),
+  bookingMode: BookingModeEnum.default('SCHEDULED'),
+  paymentMethod: PaymentMethodEnum.default('ONLINE'),
   address: AddressInput,
   notes: z.string().max(1000).optional(),
 })
@@ -55,6 +60,8 @@ const CreateBookingBody = z.object({
 const BookingSummaryDto = z.object({
   id: z.string(),
   status: BookingStatusEnum,
+  bookingMode: BookingModeEnum,
+  paymentMethod: PaymentMethodEnum,
   scheduledAt: z.iso.datetime(),
   durationMinutes: z.int().positive(),
   addressLine1: z.string(),
@@ -124,7 +131,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (req, reply) => {
       const session = requireSession(req)
-      const { serviceTierId, scheduledAt, address, notes } = req.body
+      const { serviceTierId, scheduledAt, bookingMode, paymentMethod, address, notes } = req.body
 
       const scheduledDate = new Date(scheduledAt)
       if (scheduledDate.getTime() <= Date.now()) {
@@ -136,11 +143,17 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
       })
       if (!tier) throw app.httpErrors.notFound('Service tier not available')
 
+      // CASH bookings skip the payment step entirely → straight to CONFIRMED.
+      // ONLINE bookings start as PENDING_PAYMENT and the webhook flips them to IN_ESCROW.
+      const initialStatus = paymentMethod === 'CASH' ? 'CONFIRMED' : 'PENDING_PAYMENT'
+
       const booking = await prisma.booking.create({
         data: {
           userId: session.user.id,
           serviceTierId: tier.id,
-          status: 'PENDING_PAYMENT',
+          status: initialStatus,
+          bookingMode,
+          paymentMethod,
           scheduledAt: scheduledDate,
           durationMinutes: tier.estimatedMinutes,
           addressLine1: address.line1,
@@ -159,7 +172,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
             create: {
               type: 'CREATED',
               actorId: session.user.id,
-              payload: { tierSlug: tier.slug },
+              payload: { tierSlug: tier.slug, bookingMode, paymentMethod },
             },
           },
         },
@@ -169,17 +182,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
       })
 
       reply.status(201)
-      return {
-        id: booking.id,
-        status: booking.status,
-        scheduledAt: booking.scheduledAt.toISOString(),
-        durationMinutes: booking.durationMinutes,
-        addressLine1: booking.addressLine1,
-        city: booking.city,
-        totalCentavos: booking.totalCentavos,
-        createdAt: booking.createdAt.toISOString(),
-        serviceTier: booking.serviceTier,
-      }
+      return toSummaryDto(booking)
     },
   )
 
@@ -199,19 +202,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
         orderBy: { createdAt: 'desc' },
         include: { serviceTier: { select: { id: true, slug: true, name: true } } },
       })
-      return {
-        bookings: rows.map((b) => ({
-          id: b.id,
-          status: b.status,
-          scheduledAt: b.scheduledAt.toISOString(),
-          durationMinutes: b.durationMinutes,
-          addressLine1: b.addressLine1,
-          city: b.city,
-          totalCentavos: b.totalCentavos,
-          createdAt: b.createdAt.toISOString(),
-          serviceTier: b.serviceTier,
-        })),
-      }
+      return { bookings: rows.map(toSummaryDto) }
     },
   )
 
@@ -474,23 +465,15 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
       if (!booking) throw app.httpErrors.notFound('Booking not found')
 
       return {
-        id: booking.id,
-        status: booking.status,
-        scheduledAt: booking.scheduledAt.toISOString(),
-        durationMinutes: booking.durationMinutes,
-        addressLine1: booking.addressLine1,
+        ...toSummaryDto(booking),
         addressLine2: booking.addressLine2,
         barangay: booking.barangay,
-        city: booking.city,
         province: booking.province,
         postalCode: booking.postalCode,
         latitude: booking.latitude,
         longitude: booking.longitude,
         notes: booking.notes,
         basePriceCentavos: booking.basePriceCentavos,
-        totalCentavos: booking.totalCentavos,
-        createdAt: booking.createdAt.toISOString(),
-        serviceTier: booking.serviceTier,
         events: booking.events.map((e) => ({
           id: e.id,
           type: e.type,
@@ -501,4 +484,34 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
       }
     },
   )
+}
+
+type BookingSummaryRow = {
+  id: string
+  status: import('@prisma/client').BookingStatus
+  bookingMode: import('@prisma/client').BookingMode
+  paymentMethod: import('@prisma/client').PaymentMethod
+  scheduledAt: Date
+  durationMinutes: number
+  addressLine1: string
+  city: string
+  totalCentavos: number
+  createdAt: Date
+  serviceTier: { id: string; slug: string; name: string }
+}
+
+function toSummaryDto(b: BookingSummaryRow) {
+  return {
+    id: b.id,
+    status: b.status,
+    bookingMode: b.bookingMode,
+    paymentMethod: b.paymentMethod,
+    scheduledAt: b.scheduledAt.toISOString(),
+    durationMinutes: b.durationMinutes,
+    addressLine1: b.addressLine1,
+    city: b.city,
+    totalCentavos: b.totalCentavos,
+    createdAt: b.createdAt.toISOString(),
+    serviceTier: b.serviceTier,
+  }
 }

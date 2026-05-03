@@ -327,6 +327,8 @@ const EVENT_LABELS: Record<BookingEventType, string> = {
   EN_ROUTE: 'Provider on the way',
   ARRIVED: 'Provider arrived',
   STARTED: 'Service started',
+  CUSTOMER_CONFIRMED: 'Customer marked as done',
+  PROVIDER_CASH_RECEIVED: 'Provider confirmed cash received',
   COMPLETED: 'Service completed',
   CANCELLED: 'Cancelled',
   REFUNDED: 'Refunded',

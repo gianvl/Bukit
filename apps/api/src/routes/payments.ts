@@ -34,6 +34,9 @@ export const paymentRoutes: FastifyPluginAsyncZod = async (app) => {
         include: { user: true, payment: true, serviceTier: true },
       })
       if (!booking) throw app.httpErrors.notFound('Booking not found')
+      if (booking.paymentMethod === 'CASH') {
+        throw app.httpErrors.conflict('This booking is set to pay with cash; no online checkout')
+      }
       if (booking.payment && booking.payment.status !== 'PENDING') {
         throw app.httpErrors.conflict('Payment already initiated for this booking')
       }

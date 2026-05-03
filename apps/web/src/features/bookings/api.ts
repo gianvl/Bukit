@@ -11,9 +11,14 @@ export interface BookingAddressInput {
   longitude?: number
 }
 
+export type PaymentMethod = 'ONLINE' | 'CASH'
+export type BookingMode = 'ON_DEMAND' | 'SCHEDULED'
+
 export interface CreateBookingInput {
   serviceTierId: string
   scheduledAt: string
+  bookingMode: BookingMode
+  paymentMethod: PaymentMethod
   address: BookingAddressInput
   notes?: string
 }
@@ -21,6 +26,8 @@ export interface CreateBookingInput {
 export interface BookingSummary {
   id: string
   status: string
+  bookingMode: BookingMode
+  paymentMethod: PaymentMethod
   scheduledAt: string
   durationMinutes: number
   addressLine1: string

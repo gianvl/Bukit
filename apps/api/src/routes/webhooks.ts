@@ -68,8 +68,9 @@ export const webhookRoutes: FastifyPluginAsyncZod = async (app) => {
             ? { refundedAt: new Date() }
             : {}
 
-      // Promote the Booking from PENDING_PAYMENT → CONFIRMED on first paid event.
-      // Conditional updateMany keeps it idempotent across duplicate deliveries.
+      // Promote the Booking from PENDING_PAYMENT → IN_ESCROW on first paid event
+      // (funds held until customer-confirmed completion). Conditional updateMany
+      // keeps it idempotent across duplicate webhook deliveries.
       const promotesBooking = nextStatus === 'CAPTURED'
 
       await prisma.$transaction([
@@ -86,7 +87,7 @@ export const webhookRoutes: FastifyPluginAsyncZod = async (app) => {
           ? [
               prisma.booking.updateMany({
                 where: { id: payment.bookingId, status: 'PENDING_PAYMENT' },
-                data: { status: 'CONFIRMED' },
+                data: { status: 'IN_ESCROW' },
               }),
             ]
           : []),
