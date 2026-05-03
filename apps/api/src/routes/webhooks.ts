@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { parseWebhookEvent, verifyWebhookSignature } from '../lib/paymongo.js'
+import { areaRoom, getIo } from '../lib/socket-server.js'
 
 const eventToPaymentStatus = {
   'checkout_session.payment.paid': 'CAPTURED',
@@ -73,6 +74,17 @@ export const webhookRoutes: FastifyPluginAsyncZod = async (app) => {
       // keeps it idempotent across duplicate webhook deliveries.
       const promotesBooking = nextStatus === 'CAPTURED'
 
+      // Capture the city before the transaction so we know which area room to broadcast to
+      // after the booking flips to IN_ESCROW.
+      let cityForBroadcast: string | null = null
+      if (promotesBooking) {
+        const b = await prisma.booking.findUnique({
+          where: { id: payment.bookingId },
+          select: { city: true, status: true },
+        })
+        if (b && b.status === 'PENDING_PAYMENT') cityForBroadcast = b.city
+      }
+
       await prisma.$transaction([
         prisma.payment.update({
           where: { id: payment.id },
@@ -99,6 +111,13 @@ export const webhookRoutes: FastifyPluginAsyncZod = async (app) => {
           },
         }),
       ])
+
+      // Online booking just flipped to IN_ESCROW → it's now matchable.
+      if (cityForBroadcast) {
+        getIo().to(areaRoom(cityForBroadcast)).emit('booking:created', {
+          bookingId: payment.bookingId,
+        })
+      }
 
       return { received: true as const }
     },

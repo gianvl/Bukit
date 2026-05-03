@@ -65,8 +65,8 @@ export const availableBookingsQueryOptions = queryOptions({
   queryKey: ['provider', 'me', 'available'] as const,
   queryFn: () => api.get<{ bookings: AssignedBooking[] }>('/providers/me/available-bookings'),
   select: (data) => data.bookings,
-  staleTime: 10_000,
-  refetchInterval: 15_000,
+  // Polling removed in 20c — Socket.IO booking:created/booking:taken push updates.
+  staleTime: 30_000,
 })
 
 export function acceptBooking(bookingId: string) {

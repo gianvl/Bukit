@@ -39,6 +39,15 @@ export interface ClientToServerEvents {
 
 export interface ServerToClientEvents {
   'provider:location': (data: ProviderLocationPayload) => void
+  /** New unassigned booking is available in this provider's area. */
+  'booking:created': (data: { bookingId: string }) => void
+  /** A booking was claimed by another provider — remove from your list. */
+  'booking:taken': (data: { bookingId: string }) => void
+}
+
+/** Normalize a city name to a stable Socket.IO room key. */
+export function areaRoom(city: string): string {
+  return `area:${city.trim().toLowerCase()}`
 }
 
 export interface SocketData {
@@ -91,6 +100,11 @@ export function setupSocketServer(app: FastifyInstance): AppServer {
   io.on('connection', (socket) => {
     const userId = socket.data.session.user.id
     app.log.debug({ userId, socketId: socket.id }, 'socket connected')
+
+    // Auto-join area rooms for providers so booking:created broadcasts reach them.
+    void joinProviderAreaRooms(socket).catch((err) => {
+      app.log.warn({ err, userId }, 'failed to join provider area rooms')
+    })
 
     socket.on('ping', (cb) => {
       if (typeof cb === 'function') cb({ pong: Date.now() })
@@ -190,6 +204,18 @@ async function handleProviderLocation(
       lastLocationAt,
       distanceKm,
     })
+  }
+}
+
+async function joinProviderAreaRooms(socket: AppSocket) {
+  const userId = socket.data.session.user.id
+  const profile = await prisma.providerProfile.findUnique({
+    where: { userId },
+    select: { cities: true },
+  })
+  if (!profile) return
+  for (const city of profile.cities) {
+    await socket.join(areaRoom(city))
   }
 }
 

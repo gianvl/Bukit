@@ -5,6 +5,7 @@ import { requireSession } from '../lib/auth-fastify.js'
 import { quoteCancellation } from '../lib/cancellation-policy.js'
 import { refundPayment } from '../lib/paymongo.js'
 import { haversineKm } from '../lib/distance.js'
+import { areaRoom, getIo } from '../lib/socket-server.js'
 
 const BookingStatusEnum = z.enum([
   'PENDING_PAYMENT',
@@ -181,6 +182,14 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
           serviceTier: { select: { id: true, slug: true, name: true } },
         },
       })
+
+      // Cash bookings are immediately matchable; broadcast to providers in the city.
+      // Online bookings go out from the webhook handler once payment captures.
+      if (booking.status === 'CONFIRMED') {
+        getIo().to(areaRoom(booking.city)).emit('booking:created', {
+          bookingId: booking.id,
+        })
+      }
 
       reply.status(201)
       return toSummaryDto(booking)
@@ -370,7 +379,11 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
       }
 
       const result = await prisma.booking.updateMany({
-        where: { id: req.params.id, status: 'CONFIRMED', providerId: null },
+        where: {
+          id: req.params.id,
+          status: { in: ['CONFIRMED', 'IN_ESCROW'] },
+          providerId: null,
+        },
         data: { status: 'PROVIDER_ASSIGNED', providerId: profile.id },
       })
       if (result.count === 0) {
@@ -385,6 +398,15 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
           payload: { providerId: profile.id },
         },
       })
+
+      // Tell other providers in the city that this booking is gone so their lists update instantly.
+      const taken = await prisma.booking.findUnique({
+        where: { id: req.params.id },
+        select: { city: true },
+      })
+      if (taken) {
+        getIo().to(areaRoom(taken.city)).emit('booking:taken', { bookingId: req.params.id })
+      }
 
       return {
         id: req.params.id,

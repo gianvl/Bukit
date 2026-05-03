@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useShareLocation, type ShareLocationStatus } from '@/features/providers/use-share-location'
+import { getSocket } from '@/lib/socket'
 import { ApiError } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { getSession } from '@/lib/auth-client'
@@ -65,9 +66,37 @@ const STATUS_LABEL: Record<ProviderStatus, { label: string; tone: 'default' | 's
 }
 
 function ProviderDashboard() {
+  const queryClient = useQueryClient()
   const { data: profile, isPending: profilePending } = useQuery(providerProfileQueryOptions)
   const { data: bookings, isPending: bookingsPending } = useQuery(assignedBookingsQueryOptions)
   const { data: available } = useQuery(availableBookingsQueryOptions)
+
+  // Subscribe to live booking notifications. Server auto-joins us into our city's
+  // area room on connect; we just react to events.
+  useEffect(() => {
+    if (profile?.status !== 'ACTIVE') return
+    const socket = getSocket()
+    const onCreated = () => {
+      queryClient.invalidateQueries({ queryKey: availableBookingsQueryOptions.queryKey })
+    }
+    const onTaken = (data: { bookingId: string }) => {
+      // Optimistically remove from local list, then invalidate for freshness.
+      queryClient.setQueryData<{ bookings: AssignedBooking[] }>(
+        availableBookingsQueryOptions.queryKey,
+        (prev) =>
+          prev
+            ? { bookings: prev.bookings.filter((b) => b.id !== data.bookingId) }
+            : prev,
+      )
+      queryClient.invalidateQueries({ queryKey: availableBookingsQueryOptions.queryKey })
+    }
+    socket.on('booking:created', onCreated)
+    socket.on('booking:taken', onTaken)
+    return () => {
+      socket.off('booking:created', onCreated)
+      socket.off('booking:taken', onTaken)
+    }
+  }, [profile?.status, queryClient])
 
   if (profilePending || !profile) return <DashboardSkeleton />
 
