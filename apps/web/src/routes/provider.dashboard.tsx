@@ -33,6 +33,7 @@ import { getSocket } from '@/lib/socket'
 import { PageEyebrow, PageHero, PageStat, PageStats, PageTitle } from '@/components/page-shell'
 import { showStatusToast } from '@/features/bookings/status-toasts'
 import { meQueryOptions } from '@/features/me/api'
+import { PaginationBar, usePagination } from '@/components/pagination-bar'
 import { ApiError } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { getSession } from '@/lib/auth-client'
@@ -431,52 +432,66 @@ function AssignedBookingsSection({
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Active jobs</CardTitle>
-          <CardDescription>
-            Bookings you're currently working on or about to start.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {bookingsPending ? (
-            <BookingsSkeleton />
-          ) : active.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No active jobs right now. Accept one from "Available in your area" above.
-            </p>
-          ) : (
-            <ul className="space-y-3">
-              {active.map((b) => (
-                <li key={b.id}>
-                  <AssignedBookingRow booking={b} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      <AssignedJobsCard
+        title="Active jobs"
+        description="Bookings you're currently working on or about to start."
+        emptyHint='No active jobs right now. Accept one from "Available in your area" above.'
+        bookings={active}
+        pending={bookingsPending}
+      />
 
       {past.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Past jobs</CardTitle>
-            <CardDescription>
-              {past.length} {past.length === 1 ? 'completed booking' : 'completed bookings'}.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+        <AssignedJobsCard
+          title="Past jobs"
+          description={`${past.length} ${past.length === 1 ? 'completed booking' : 'completed bookings'}.`}
+          bookings={past}
+          pending={false}
+        />
+      )}
+    </>
+  )
+}
+
+function AssignedJobsCard({
+  title,
+  description,
+  emptyHint,
+  bookings,
+  pending,
+}: {
+  title: string
+  description: string
+  emptyHint?: string
+  bookings: AssignedBooking[]
+  pending: boolean
+}) {
+  const { visible, page, totalPages, setPage } = usePagination(bookings, 10)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {pending ? (
+          <BookingsSkeleton />
+        ) : bookings.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{emptyHint}</p>
+        ) : (
+          <>
             <ul className="space-y-3">
-              {past.map((b) => (
+              {visible.map((b) => (
                 <li key={b.id}>
                   <AssignedBookingRow booking={b} />
                 </li>
               ))}
             </ul>
-          </CardContent>
-        </Card>
-      )}
-    </>
+            <PaginationBar page={page} totalPages={totalPages} onPage={setPage} />
+          </>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { Banknote, CalendarClock, MapPin, Receipt, Zap } from 'lucide-react'
 import { bookingsListQueryOptions } from '@/features/bookings/queries'
 import type { BookingSummary } from '@/features/bookings/api'
+import { PaginationBar, usePagination } from '@/components/pagination-bar'
 import { BookingStatusBadge } from '@/features/bookings/status'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -86,14 +87,12 @@ function BookingSections({ bookings }: { bookings: BookingSummary[] }) {
         }
         bookings={active}
         emptyHint="Pick a tier and we'll match you in minutes."
-        startIndex={0}
       />
       {past.length > 0 && (
         <SectionList
           eyebrow="History"
           title={past.length === 1 ? '1 past booking' : `${past.length} past bookings`}
           bookings={past}
-          startIndex={active.length}
         />
       )}
     </div>
@@ -105,14 +104,14 @@ function SectionList({
   title,
   bookings,
   emptyHint,
-  startIndex,
 }: {
   eyebrow: string
   title: string
   bookings: BookingSummary[]
   emptyHint?: string
-  startIndex: number
 }) {
+  const { visible, page, totalPages, setPage } = usePagination(bookings, 10)
+
   return (
     <div className="space-y-3">
       <div>
@@ -122,13 +121,16 @@ function SectionList({
       {bookings.length === 0 ? (
         <p className="text-sm text-muted-foreground">{emptyHint}</p>
       ) : (
-        <ul className="space-y-3">
-          {bookings.map((b, i) => (
-            <li key={b.id}>
-              <BookingRow booking={b} index={startIndex + i} />
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="space-y-3">
+            {visible.map((b, i) => (
+              <li key={b.id}>
+                <BookingRow booking={b} index={i} />
+              </li>
+            ))}
+          </ul>
+          <PaginationBar page={page} totalPages={totalPages} onPage={setPage} />
+        </>
       )}
     </div>
   )
