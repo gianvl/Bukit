@@ -2,7 +2,8 @@ import { useEffect } from 'react'
 import { Link, createFileRoute, redirect } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { CalendarClock, CheckCircle2, Loader2, MapPin, NotebookPen, XCircle } from 'lucide-react'
+import { Banknote, CalendarClock, CheckCircle2, CreditCard, Loader2, MapPin, NotebookPen, XCircle, Zap } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import {
   cancelBooking,
   customerCompleteBooking,
@@ -116,12 +117,33 @@ function BookingDetailPage() {
     <section className="mx-auto max-w-3xl px-6 py-10 space-y-6">
       {returnStatus && <ReturnBanner status={returnStatus} payment={booking.payment} />}
 
-      <header className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">{booking.serviceTier.name}</p>
-          <h1 className="text-2xl font-semibold tracking-tight">
+      <header className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+            {booking.serviceTier.name}
+          </p>
+          <h1 className="font-display text-3xl tracking-tight">
             {formatScheduled(booking.scheduledAt)}
           </h1>
+          <div className="flex items-center gap-1.5 pt-1">
+            {(booking as { bookingMode?: 'ON_DEMAND' | 'SCHEDULED' }).bookingMode === 'ON_DEMAND' && (
+              <Badge variant="outline" className="gap-1">
+                <Zap className="size-3" />
+                On-demand
+              </Badge>
+            )}
+            {(booking as { paymentMethod?: 'ONLINE' | 'CASH' }).paymentMethod === 'CASH' ? (
+              <Badge variant="outline" className="gap-1">
+                <Banknote className="size-3" />
+                Cash on arrival
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="gap-1">
+                <CreditCard className="size-3" />
+                Online payment
+              </Badge>
+            )}
+          </div>
         </div>
         <div className="flex flex-col items-end gap-2">
           <BookingStatusBadge status={booking.status as never} />
