@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Clock } from 'lucide-react'
 import { serviceTiersQueryOptions, type ServiceTier } from '@/features/service-tiers/queries'
@@ -65,7 +65,11 @@ function TierCard({ tier }: { tier: ServiceTier }) {
         </div>
       </CardContent>
       <CardFooter>
-        <Button className="w-full">Book {tier.name}</Button>
+        <Button asChild className="w-full">
+          <Link to="/book/$tierSlug" params={{ tierSlug: tier.slug }}>
+            Book {tier.name}
+          </Link>
+        </Button>
       </CardFooter>
     </Card>
   )
