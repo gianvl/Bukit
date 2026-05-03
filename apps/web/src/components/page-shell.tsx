@@ -129,7 +129,7 @@ export function PageHero({
   return (
     <section className={cn('relative overflow-hidden border-b', className)}>
       <CreamBackground tone={tone} />
-      <div className={cn('relative mx-auto px-6 py-14 sm:py-20', maxWidth)}>{children}</div>
+      <div className={cn('relative mx-auto px-4 sm:px-6 py-12 sm:py-20', maxWidth)}>{children}</div>
     </section>
   )
 }
