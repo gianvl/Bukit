@@ -67,14 +67,9 @@ function RootLayoutShell({ children }: { children: ReactNode }) {
                 </Button>
               </>
             ) : !isPending ? (
-              <>
-                <Button asChild variant="ghost" size="sm">
-                  <Link to="/signin">Sign in</Link>
-                </Button>
-                <Button asChild size="sm">
-                  <Link to="/signup">Sign up</Link>
-                </Button>
-              </>
+              <Button asChild size="sm">
+                <Link to="/signin">Sign in</Link>
+              </Button>
             ) : null}
           </nav>
         </div>
