@@ -97,6 +97,56 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
     },
   )
 
+  /**
+   * Bookings available to the caller for acceptance: status=CONFIRMED,
+   * unassigned, and in one of the cities on the caller's profile.
+   * (Cities are matched case-insensitively.)
+   */
+  app.get(
+    '/providers/me/available-bookings',
+    {
+      schema: {
+        response: { 200: z.object({ bookings: z.array(AssignedBookingDto) }) },
+      },
+    },
+    async (req) => {
+      const session = requireSession(req)
+      const profile = await prisma.providerProfile.findUnique({
+        where: { userId: session.user.id },
+        select: { id: true, status: true, cities: true },
+      })
+      if (!profile) throw app.httpErrors.forbidden('Not a provider')
+      if (profile.status !== 'ACTIVE') return { bookings: [] }
+      if (profile.cities.length === 0) return { bookings: [] }
+
+      const rows = await prisma.booking.findMany({
+        where: {
+          status: 'CONFIRMED',
+          providerId: null,
+          city: { in: profile.cities, mode: 'insensitive' },
+        },
+        orderBy: { scheduledAt: 'asc' },
+        include: {
+          serviceTier: { select: { id: true, slug: true, name: true } },
+          user: { select: { name: true } },
+        },
+      })
+      return {
+        bookings: rows.map((b) => ({
+          id: b.id,
+          status: b.status,
+          scheduledAt: b.scheduledAt.toISOString(),
+          durationMinutes: b.durationMinutes,
+          addressLine1: b.addressLine1,
+          city: b.city,
+          totalCentavos: b.totalCentavos,
+          serviceTier: b.serviceTier,
+          customerName: b.user.name,
+        })),
+      }
+    },
+  )
+
   app.get(
     '/providers/me/bookings',
     {

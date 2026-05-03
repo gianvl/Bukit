@@ -1,11 +1,16 @@
 import { Link, createFileRoute, redirect } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
-import { CalendarClock, MapPin } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CalendarClock, Loader2, MapPin } from 'lucide-react'
 import {
+  acceptBooking,
   assignedBookingsQueryOptions,
+  availableBookingsQueryOptions,
   providerProfileQueryOptions,
+  type AssignedBooking,
   type ProviderStatus,
 } from '@/features/providers/api'
+import { ApiError } from '@/lib/api'
+import { Button } from '@/components/ui/button'
 import { getSession } from '@/lib/auth-client'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -27,7 +32,10 @@ export const Route = createFileRoute('/provider/dashboard')({
   loader: async ({ context }) => {
     const profile = await context.queryClient.ensureQueryData(providerProfileQueryOptions)
     if (!profile) throw redirect({ to: '/provider' })
-    await context.queryClient.ensureQueryData(assignedBookingsQueryOptions)
+    await Promise.all([
+      context.queryClient.ensureQueryData(assignedBookingsQueryOptions),
+      context.queryClient.ensureQueryData(availableBookingsQueryOptions),
+    ])
   },
 })
 
@@ -41,6 +49,7 @@ const STATUS_LABEL: Record<ProviderStatus, { label: string; tone: 'default' | 's
 function ProviderDashboard() {
   const { data: profile, isPending: profilePending } = useQuery(providerProfileQueryOptions)
   const { data: bookings, isPending: bookingsPending } = useQuery(assignedBookingsQueryOptions)
+  const { data: available } = useQuery(availableBookingsQueryOptions)
 
   if (profilePending || !profile) return <DashboardSkeleton />
 
@@ -67,6 +76,32 @@ function ProviderDashboard() {
               24 hours.
             </CardDescription>
           </CardHeader>
+        </Card>
+      )}
+
+      {profile.status === 'ACTIVE' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Available in your area</CardTitle>
+            <CardDescription>
+              Confirmed bookings near you. First to accept gets the job.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {available && available.length > 0 ? (
+              <ul className="space-y-3">
+                {available.map((b) => (
+                  <li key={b.id}>
+                    <AvailableBookingRow booking={b} />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No matching bookings right now. We'll show new ones here as they come in.
+              </p>
+            )}
+          </CardContent>
         </Card>
       )}
 
@@ -114,6 +149,58 @@ function ProviderDashboard() {
         </CardContent>
       </Card>
     </section>
+  )
+}
+
+function AvailableBookingRow({ booking }: { booking: AssignedBooking }) {
+  const queryClient = useQueryClient()
+  const accept = useMutation({
+    mutationFn: () => acceptBooking(booking.id),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: availableBookingsQueryOptions.queryKey }),
+        queryClient.invalidateQueries({ queryKey: assignedBookingsQueryOptions.queryKey }),
+      ])
+    },
+  })
+
+  const errorMessage =
+    accept.error instanceof ApiError ? accept.error.message : accept.error ? 'Could not accept' : null
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div className="space-y-1">
+          <CardTitle className="text-base">{booking.serviceTier.name}</CardTitle>
+          <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
+            <CalendarClock className="size-3.5" />
+            {formatScheduled(booking.scheduledAt)} · {formatDuration(booking.durationMinutes)}
+          </p>
+        </div>
+        <span className="text-sm font-medium">{formatCentavos(booking.totalCentavos)}</span>
+      </CardHeader>
+      <CardContent className="flex items-center justify-between gap-3 text-sm">
+        <span className="text-muted-foreground inline-flex items-center gap-2">
+          <MapPin className="size-3.5" />
+          {booking.addressLine1}, {booking.city}
+        </span>
+        <Button size="sm" onClick={() => accept.mutate()} disabled={accept.isPending}>
+          {accept.isPending ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              Accepting…
+            </>
+          ) : (
+            'Accept'
+          )}
+        </Button>
+      </CardContent>
+      {errorMessage && (
+        <CardContent className="pt-0 text-sm text-destructive" role="alert">
+          {errorMessage}
+        </CardContent>
+      )}
+    </Card>
   )
 }
 

@@ -53,6 +53,20 @@ export const assignedBookingsQueryOptions = queryOptions({
   staleTime: 15_000,
 })
 
+export const availableBookingsQueryOptions = queryOptions({
+  queryKey: ['provider', 'me', 'available'] as const,
+  queryFn: () => api.get<{ bookings: AssignedBooking[] }>('/providers/me/available-bookings'),
+  select: (data) => data.bookings,
+  staleTime: 10_000,
+  refetchInterval: 15_000,
+})
+
+export function acceptBooking(bookingId: string) {
+  return api.post<{ id: string; status: 'PROVIDER_ASSIGNED'; providerId: string }>(
+    `/bookings/${bookingId}/accept`,
+  )
+}
+
 export interface ApplyProviderInput {
   bio?: string
   cities?: string[]

@@ -345,9 +345,61 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
   )
 
   /**
+   * Provider claims a CONFIRMED, unassigned booking. Race-safe: updateMany
+   * with status+providerId predicates ensures only one caller wins.
+   */
+  app.post(
+    '/bookings/:id/accept',
+    {
+      schema: {
+        params: z.object({ id: z.string().min(1) }),
+        response: {
+          200: z.object({
+            id: z.string(),
+            status: BookingStatusEnum,
+            providerId: z.string(),
+          }),
+        },
+      },
+    },
+    async (req) => {
+      const session = requireSession(req)
+      const profile = await prisma.providerProfile.findUnique({
+        where: { userId: session.user.id },
+        select: { id: true, status: true },
+      })
+      if (!profile) throw app.httpErrors.forbidden('Not a provider')
+      if (profile.status !== 'ACTIVE') {
+        throw app.httpErrors.forbidden('Provider is not active')
+      }
+
+      const result = await prisma.booking.updateMany({
+        where: { id: req.params.id, status: 'CONFIRMED', providerId: null },
+        data: { status: 'PROVIDER_ASSIGNED', providerId: profile.id },
+      })
+      if (result.count === 0) {
+        throw app.httpErrors.conflict('Booking is no longer available')
+      }
+
+      await prisma.bookingEvent.create({
+        data: {
+          bookingId: req.params.id,
+          type: 'PROVIDER_ASSIGNED',
+          actorId: session.user.id,
+          payload: { providerId: profile.id },
+        },
+      })
+
+      return {
+        id: req.params.id,
+        status: 'PROVIDER_ASSIGNED' as const,
+        providerId: profile.id,
+      }
+    },
+  )
+
+  /**
    * Provider transitions: PROVIDER_ASSIGNED → IN_PROGRESS → COMPLETED.
-   * Provider matching is wired in a later checkpoint; for now these are guarded
-   * to require the caller to be the booking's assigned provider.
    */
   app.post(
     '/bookings/:id/start',
