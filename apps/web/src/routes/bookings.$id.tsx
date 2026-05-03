@@ -1,12 +1,31 @@
 import { useEffect } from 'react'
 import { Link, createFileRoute, redirect } from '@tanstack/react-router'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { CalendarClock, CheckCircle2, MapPin, NotebookPen, XCircle } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Loader2, MapPin, NotebookPen, XCircle } from 'lucide-react'
+import {
+  cancelBooking,
+  getCancellationQuote,
+  type CancellationQuote,
+} from '@/features/bookings/api'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import { ApiError } from '@/lib/api'
 import {
   bookingDetailQueryOptions,
+  bookingsListQueryOptions,
   type BookingDetail,
   type BookingEventType,
+  type BookingStatus,
 } from '@/features/bookings/queries'
 import { BookingStatusBadge, PaymentStatusBadge } from '@/features/bookings/status'
 import {
@@ -100,8 +119,9 @@ function BookingDetailPage() {
       </header>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-start justify-between gap-4">
           <CardTitle className="text-base">Booking details</CardTitle>
+          <CancelBookingButton booking={booking} />
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <Row icon={<MapPin className="size-4" />} label="Address">
@@ -140,6 +160,108 @@ function BookingDetailPage() {
         </CardContent>
       </Card>
     </section>
+  )
+}
+
+const CANCELLABLE_STATES: BookingStatus[] = [
+  'PENDING_PAYMENT',
+  'CONFIRMED',
+  'PROVIDER_ASSIGNED',
+]
+
+function CancelBookingButton({ booking }: { booking: BookingDetail }) {
+  const queryClient = useQueryClient()
+
+  const eligible = CANCELLABLE_STATES.includes(booking.status as BookingStatus)
+  const quoteQuery = useQuery<CancellationQuote>({
+    queryKey: ['bookings', booking.id, 'cancellation-quote'],
+    queryFn: () => getCancellationQuote(booking.id),
+    enabled: eligible,
+  })
+
+  const cancelMutation = useMutation({
+    mutationFn: () => cancelBooking(booking.id),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: bookingDetailQueryOptions(booking.id).queryKey }),
+        queryClient.invalidateQueries({ queryKey: bookingsListQueryOptions.queryKey }),
+      ])
+    },
+  })
+
+  if (!eligible) return null
+
+  const quote = quoteQuery.data
+  const errorMessage =
+    cancelMutation.error instanceof ApiError
+      ? cancelMutation.error.message
+      : cancelMutation.error
+        ? 'Cancellation failed'
+        : null
+
+  return (
+    <AlertDialog
+      onOpenChange={(open) => {
+        if (!open) cancelMutation.reset()
+      }}
+    >
+      <AlertDialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          Cancel booking
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Cancel this booking?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {quote ? quote.reason : 'Loading cancellation policy…'}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        {quote && (
+          <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm space-y-1">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Booking total</span>
+              <span>{formatCentavos(booking.totalCentavos)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Cancellation fee</span>
+              <span>{formatCentavos(quote.feeCentavos)}</span>
+            </div>
+            <div className="flex justify-between font-medium">
+              <span>Refund</span>
+              <span>{formatCentavos(quote.refundCentavos)}</span>
+            </div>
+          </div>
+        )}
+
+        {errorMessage && (
+          <p className="text-sm text-destructive" role="alert">
+            {errorMessage}
+          </p>
+        )}
+
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={cancelMutation.isPending}>Keep booking</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={cancelMutation.isPending || !quote}
+            onClick={(e) => {
+              e.preventDefault()
+              cancelMutation.mutate()
+            }}
+          >
+            {cancelMutation.isPending ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Cancelling…
+              </>
+            ) : (
+              'Confirm cancellation'
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 

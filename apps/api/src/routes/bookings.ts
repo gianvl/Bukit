@@ -2,6 +2,8 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { requireSession } from '../lib/auth-fastify.js'
+import { quoteCancellation } from '../lib/cancellation-policy.js'
+import { refundPayment } from '../lib/helixpay.js'
 
 const BookingStatusEnum = z.enum([
   'PENDING_PAYMENT',
@@ -86,6 +88,24 @@ const BookingDetailDto = BookingSummaryDto.extend({
     })
     .nullable(),
 })
+
+async function assertProviderForBooking(
+  app: import('fastify').FastifyInstance,
+  userId: string,
+  bookingId: string,
+) {
+  const profile = await prisma.providerProfile.findUnique({
+    where: { userId },
+    select: { id: true },
+  })
+  if (!profile) throw app.httpErrors.forbidden('Not a provider')
+  const booking = await prisma.booking.findFirst({
+    where: { id: bookingId, providerId: profile.id },
+    select: { id: true, status: true },
+  })
+  if (!booking) throw app.httpErrors.notFound('Booking not found or not assigned to you')
+  return booking
+}
 
 export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post(
@@ -188,6 +208,192 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
           serviceTier: b.serviceTier,
         })),
       }
+    },
+  )
+
+  app.get(
+    '/bookings/:id/cancellation-quote',
+    {
+      schema: {
+        params: z.object({ id: z.string().min(1) }),
+        response: {
+          200: z.object({
+            cancellable: z.boolean(),
+            feeCentavos: z.int().nonnegative(),
+            refundCentavos: z.int().nonnegative(),
+            reason: z.string(),
+          }),
+        },
+      },
+    },
+    async (req) => {
+      const session = requireSession(req)
+      const booking = await prisma.booking.findFirst({
+        where: { id: req.params.id, userId: session.user.id },
+        select: { status: true, scheduledAt: true, totalCentavos: true },
+      })
+      if (!booking) throw app.httpErrors.notFound('Booking not found')
+
+      const quote = quoteCancellation({
+        status: booking.status,
+        scheduledAt: booking.scheduledAt,
+        totalCentavos: booking.totalCentavos,
+      })
+      return {
+        ...quote,
+        refundCentavos: Math.max(0, booking.totalCentavos - quote.feeCentavos),
+      }
+    },
+  )
+
+  app.post(
+    '/bookings/:id/cancel',
+    {
+      schema: {
+        params: z.object({ id: z.string().min(1) }),
+        response: {
+          200: z.object({
+            id: z.string(),
+            status: BookingStatusEnum,
+            feeCentavos: z.int().nonnegative(),
+            refundCentavos: z.int().nonnegative(),
+            refundId: z.string().nullable(),
+          }),
+        },
+      },
+    },
+    async (req) => {
+      const session = requireSession(req)
+      const booking = await prisma.booking.findFirst({
+        where: { id: req.params.id, userId: session.user.id },
+        include: { payment: true },
+      })
+      if (!booking) throw app.httpErrors.notFound('Booking not found')
+
+      const quote = quoteCancellation({
+        status: booking.status,
+        scheduledAt: booking.scheduledAt,
+        totalCentavos: booking.totalCentavos,
+      })
+      if (!quote.cancellable) throw app.httpErrors.conflict(quote.reason)
+
+      const refundCentavos = Math.max(0, booking.totalCentavos - quote.feeCentavos)
+      let refundId: string | null = null
+
+      // Refund only if a payment was actually captured.
+      if (
+        refundCentavos > 0 &&
+        booking.payment &&
+        booking.payment.status === 'CAPTURED' &&
+        booking.payment.helixPayPaymentId
+      ) {
+        const result = await refundPayment(booking.payment.helixPayPaymentId, refundCentavos)
+        refundId = result.refundId
+      }
+
+      const isFullRefund =
+        refundCentavos > 0 && booking.payment && refundCentavos === booking.payment.amountCentavos
+
+      await prisma.$transaction([
+        prisma.booking.update({
+          where: { id: booking.id },
+          data: { status: 'CANCELLED_BY_USER' },
+        }),
+        ...(booking.payment && isFullRefund
+          ? [
+              prisma.payment.update({
+                where: { id: booking.payment.id },
+                data: { status: 'REFUNDED', refundedAt: new Date() },
+              }),
+            ]
+          : []),
+        prisma.bookingEvent.create({
+          data: {
+            bookingId: booking.id,
+            type: 'CANCELLED',
+            actorId: session.user.id,
+            payload: {
+              reason: quote.reason,
+              feeCentavos: quote.feeCentavos,
+              refundCentavos,
+              refundId,
+            },
+          },
+        }),
+        ...(refundId
+          ? [
+              prisma.bookingEvent.create({
+                data: {
+                  bookingId: booking.id,
+                  type: 'REFUNDED',
+                  actorId: session.user.id,
+                  payload: { refundId, refundCentavos },
+                },
+              }),
+            ]
+          : []),
+      ])
+
+      return {
+        id: booking.id,
+        status: 'CANCELLED_BY_USER' as const,
+        feeCentavos: quote.feeCentavos,
+        refundCentavos,
+        refundId,
+      }
+    },
+  )
+
+  /**
+   * Provider transitions: PROVIDER_ASSIGNED → IN_PROGRESS → COMPLETED.
+   * Provider matching is wired in a later checkpoint; for now these are guarded
+   * to require the caller to be the booking's assigned provider.
+   */
+  app.post(
+    '/bookings/:id/start',
+    {
+      schema: {
+        params: z.object({ id: z.string().min(1) }),
+        response: { 200: z.object({ id: z.string(), status: BookingStatusEnum }) },
+      },
+    },
+    async (req) => {
+      const session = requireSession(req)
+      const booking = await assertProviderForBooking(app, session.user.id, req.params.id)
+      if (booking.status !== 'PROVIDER_ASSIGNED') {
+        throw app.httpErrors.conflict(`Cannot start a booking in status ${booking.status}`)
+      }
+      await prisma.$transaction([
+        prisma.booking.update({ where: { id: booking.id }, data: { status: 'IN_PROGRESS' } }),
+        prisma.bookingEvent.create({
+          data: { bookingId: booking.id, type: 'STARTED', actorId: session.user.id },
+        }),
+      ])
+      return { id: booking.id, status: 'IN_PROGRESS' as const }
+    },
+  )
+
+  app.post(
+    '/bookings/:id/complete',
+    {
+      schema: {
+        params: z.object({ id: z.string().min(1) }),
+        response: { 200: z.object({ id: z.string(), status: BookingStatusEnum }) },
+      },
+    },
+    async (req) => {
+      const session = requireSession(req)
+      const booking = await assertProviderForBooking(app, session.user.id, req.params.id)
+      if (booking.status !== 'IN_PROGRESS') {
+        throw app.httpErrors.conflict(`Cannot complete a booking in status ${booking.status}`)
+      }
+      await prisma.$transaction([
+        prisma.booking.update({ where: { id: booking.id }, data: { status: 'COMPLETED' } }),
+        prisma.bookingEvent.create({
+          data: { bookingId: booking.id, type: 'COMPLETED', actorId: session.user.id },
+        }),
+      ])
+      return { id: booking.id, status: 'COMPLETED' as const }
     },
   )
 

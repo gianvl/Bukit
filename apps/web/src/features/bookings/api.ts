@@ -39,3 +39,26 @@ export function startCheckout(bookingId: string) {
     bookingId,
   })
 }
+
+export interface CancellationQuote {
+  cancellable: boolean
+  feeCentavos: number
+  refundCentavos: number
+  reason: string
+}
+
+export function getCancellationQuote(bookingId: string) {
+  return api.get<CancellationQuote>(`/bookings/${bookingId}/cancellation-quote`)
+}
+
+export interface CancelResult {
+  id: string
+  status: 'CANCELLED_BY_USER'
+  feeCentavos: number
+  refundCentavos: number
+  refundId: string | null
+}
+
+export function cancelBooking(bookingId: string) {
+  return api.post<CancelResult>(`/bookings/${bookingId}/cancel`)
+}

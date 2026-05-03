@@ -42,6 +42,23 @@ export async function createCheckoutSession(input: CreateCheckoutInput): Promise
 }
 
 /**
+ * Issues a refund against a previously captured HelixPay payment.
+ *
+ * NOTE: Sandbox stub. Replace with the real HelixPay refund API call once wired:
+ *
+ *   POST {HELIXPAY_BASE_URL}/v1/refunds
+ *   Authorization: Bearer {HELIXPAY_API_KEY}
+ *   { paymentId, amountCentavos }
+ */
+export async function refundPayment(paymentId: string, amountCentavos: number): Promise<{ refundId: string }> {
+  if (env.HELIXPAY_API_KEY === 'sandbox-helixpay-api-key') {
+    return { refundId: `sbx_refund_${paymentId}_${amountCentavos}_${Date.now()}` }
+  }
+  // TODO: live HelixPay refund call.
+  throw new Error('HelixPay live refund not implemented yet')
+}
+
+/**
  * Verifies an incoming webhook signature using HMAC-SHA256 over the raw body.
  * Adjust the signature header name and digest format to match HelixPay's spec.
  */
