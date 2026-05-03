@@ -3,13 +3,12 @@ import { z } from 'zod'
 import { env } from '../env.js'
 import { prisma } from '../lib/prisma.js'
 import { requireSession } from '../lib/auth-fastify.js'
-import { createCheckoutSession } from '../lib/helixpay.js'
+import { createCheckoutSession } from '../lib/paymongo.js'
 
 export const paymentRoutes: FastifyPluginAsyncZod = async (app) => {
   /**
-   * Sandbox helper that creates a Payment row and a HelixPay checkout session
-   * for an existing booking. The full booking-creation flow ships in a later
-   * checkpoint; for now this validates the integration shape end-to-end.
+   * Creates a Payment row and a PayMongo Checkout Session for an existing
+   * booking. Returns the URL to redirect the user to.
    */
   app.post(
     '/payments/checkout',
@@ -42,7 +41,6 @@ export const paymentRoutes: FastifyPluginAsyncZod = async (app) => {
       const checkout = await createCheckoutSession({
         bookingId: booking.id,
         amountCentavos: booking.totalCentavos,
-        currency: 'PHP',
         customerEmail: booking.user.email,
         customerName: booking.user.name,
         description: `Bukit · ${booking.serviceTier.name}`,
@@ -56,10 +54,10 @@ export const paymentRoutes: FastifyPluginAsyncZod = async (app) => {
           bookingId: booking.id,
           amountCentavos: booking.totalCentavos,
           status: 'PENDING',
-          helixPayCheckoutId: checkout.checkoutId,
+          paymongoCheckoutId: checkout.checkoutId,
         },
         update: {
-          helixPayCheckoutId: checkout.checkoutId,
+          paymongoCheckoutId: checkout.checkoutId,
           status: 'PENDING',
         },
       })

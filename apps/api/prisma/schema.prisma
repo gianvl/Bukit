@@ -228,10 +228,10 @@ model Payment {
   amountCentavos Int
   currency       String        @default("PHP")
 
-  // HelixPay references
-  helixPayCheckoutId String? @unique
-  helixPayPaymentId  String? @unique
-  helixPayPayload    Json?
+  // PayMongo references
+  paymongoCheckoutId String? @unique
+  paymongoPaymentId  String? @unique
+  paymongoPayload    Json?
 
   authorizedAt DateTime?
   capturedAt   DateTime?

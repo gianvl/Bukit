@@ -10,10 +10,11 @@ const EnvSchema = z.object({
   AUTH_SECRET: z.string().min(32).default('dev-auth-secret-change-me-32chars-or-more'),
   API_PUBLIC_URL: z.url().default('http://localhost:3001'),
 
-  // HelixPay (PH payment gateway). Sandbox creds in dev; real creds in prod.
-  HELIXPAY_BASE_URL: z.url().default('https://api.helixpay.ph'),
-  HELIXPAY_API_KEY: z.string().min(1).default('sandbox-helixpay-api-key'),
-  HELIXPAY_WEBHOOK_SECRET: z.string().min(16).default('sandbox-helixpay-webhook-secret-min-32chars'),
+  // PayMongo (PH payment gateway). Use sk_test_* in dev, sk_live_* in prod.
+  PAYMONGO_BASE_URL: z.url().default('https://api.paymongo.com/v1'),
+  PAYMONGO_SECRET_KEY: z.string().min(1),
+  // Webhook secret is optional in dev — we relax signature verification when unset.
+  PAYMONGO_WEBHOOK_SECRET: z.string().min(1).optional(),
 
   // PhilSMS (PH SMS provider) — used for phone OTP delivery
   PHILSMS_BASE_URL: z.url().default('https://app.philsms.com/api/v3'),

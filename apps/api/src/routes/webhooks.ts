@@ -1,40 +1,27 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { verifyWebhookSignature } from '../lib/helixpay.js'
+import { parseWebhookEvent, verifyWebhookSignature } from '../lib/paymongo.js'
 
-/**
- * Generic webhook payload shape we adopt internally. The real HelixPay
- * payload may differ — adapt the parser when integrating.
- */
-const WebhookPayload = z.object({
-  event: z.enum(['payment.authorized', 'payment.captured', 'payment.failed', 'payment.refunded']),
-  data: z.object({
-    checkoutId: z.string(),
-    paymentId: z.string().optional(),
-    amountCentavos: z.int().nonnegative().optional(),
-  }),
-})
-
-const eventToStatus = {
-  'payment.authorized': 'AUTHORIZED',
-  'payment.captured': 'CAPTURED',
+const eventToPaymentStatus = {
+  'checkout_session.payment.paid': 'CAPTURED',
+  'payment.paid': 'CAPTURED',
   'payment.failed': 'FAILED',
   'payment.refunded': 'REFUNDED',
 } as const
 
 const eventToBookingEvent = {
-  'payment.authorized': 'PAYMENT_AUTHORIZED',
-  'payment.captured': 'PAYMENT_AUTHORIZED', // captured implies authorized
+  'checkout_session.payment.paid': 'PAYMENT_AUTHORIZED',
+  'payment.paid': 'PAYMENT_AUTHORIZED',
   'payment.failed': 'CANCELLED',
   'payment.refunded': 'REFUNDED',
 } as const
 
 export const webhookRoutes: FastifyPluginAsyncZod = async (app) => {
   app.post(
-    '/webhooks/helixpay',
+    '/webhooks/paymongo',
     {
-      // rawBody is needed for signature verification; this route opts in.
+      // rawBody is needed for signature verification.
       config: { rawBody: true },
       schema: {
         response: {
@@ -43,51 +30,55 @@ export const webhookRoutes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (req) => {
-      const signature = req.headers['x-helixpay-signature']
-      const sig = Array.isArray(signature) ? signature[0] : signature
+      const sigHeader = req.headers['paymongo-signature']
+      const sig = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader
       const raw = (req as unknown as { rawBody?: Buffer }).rawBody
 
       if (!raw || !verifyWebhookSignature(raw, sig)) {
         throw app.httpErrors.unauthorized('Invalid webhook signature')
       }
 
-      const parsed = WebhookPayload.safeParse(req.body)
-      if (!parsed.success) {
-        throw app.httpErrors.badRequest('Invalid webhook payload')
-      }
-      const { event, data } = parsed.data
-
-      const payment = await prisma.payment.findUnique({
-        where: { helixPayCheckoutId: data.checkoutId },
-      })
-      if (!payment) {
-        // Acknowledge unknown checkouts so HelixPay doesn't keep retrying.
-        app.log.warn({ checkoutId: data.checkoutId }, 'webhook for unknown checkout')
+      const event = parseWebhookEvent(req.body)
+      if (!event) {
+        // Unhandled event type — ack so PayMongo stops retrying.
         return { received: true as const }
       }
 
-      const nextStatus = eventToStatus[event]
-      const nowFields =
-        nextStatus === 'AUTHORIZED'
-          ? { authorizedAt: new Date() }
-          : nextStatus === 'CAPTURED'
-            ? { capturedAt: new Date() }
-            : nextStatus === 'REFUNDED'
-              ? { refundedAt: new Date() }
-              : {}
+      // Locate the Payment row by checkout id (preferred) or payment id.
+      const payment = await prisma.payment.findFirst({
+        where: event.checkoutId
+          ? { paymongoCheckoutId: event.checkoutId }
+          : event.paymentId
+            ? { paymongoPaymentId: event.paymentId }
+            : event.bookingId
+              ? { bookingId: event.bookingId }
+              : { id: '__never__' },
+      })
 
-      // Promote PENDING_PAYMENT → CONFIRMED once a payment authorizes/captures
-      // so it shows up for matching. Conditional update is idempotent across
-      // duplicate webhook deliveries.
-      const promotesBooking = nextStatus === 'AUTHORIZED' || nextStatus === 'CAPTURED'
+      if (!payment) {
+        app.log.warn({ event }, 'webhook for unknown payment')
+        return { received: true as const }
+      }
+
+      const nextStatus = eventToPaymentStatus[event.type]
+      const nowFields =
+        nextStatus === 'CAPTURED'
+          ? { capturedAt: new Date() }
+          : nextStatus === 'REFUNDED'
+            ? { refundedAt: new Date() }
+            : {}
+
+      // Promote the Booking from PENDING_PAYMENT → CONFIRMED on first paid event.
+      // Conditional updateMany keeps it idempotent across duplicate deliveries.
+      const promotesBooking = nextStatus === 'CAPTURED'
 
       await prisma.$transaction([
         prisma.payment.update({
           where: { id: payment.id },
           data: {
             status: nextStatus,
-            helixPayPaymentId: data.paymentId ?? payment.helixPayPaymentId,
-            helixPayPayload: parsed.data as object,
+            paymongoPaymentId: event.paymentId ?? payment.paymongoPaymentId,
+            paymongoPayload: req.body as object,
             ...nowFields,
           },
         }),
@@ -102,8 +93,8 @@ export const webhookRoutes: FastifyPluginAsyncZod = async (app) => {
         prisma.bookingEvent.create({
           data: {
             bookingId: payment.bookingId,
-            type: eventToBookingEvent[event],
-            payload: { event, checkoutId: data.checkoutId },
+            type: eventToBookingEvent[event.type],
+            payload: { event: event.type, checkoutId: event.checkoutId, paymentId: event.paymentId },
           },
         }),
       ])

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { requireSession } from '../lib/auth-fastify.js'
 import { quoteCancellation } from '../lib/cancellation-policy.js'
-import { refundPayment } from '../lib/helixpay.js'
+import { refundPayment } from '../lib/paymongo.js'
 
 const BookingStatusEnum = z.enum([
   'PENDING_PAYMENT',
@@ -285,9 +285,9 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
         refundCentavos > 0 &&
         booking.payment &&
         booking.payment.status === 'CAPTURED' &&
-        booking.payment.helixPayPaymentId
+        booking.payment.paymongoPaymentId
       ) {
-        const result = await refundPayment(booking.payment.helixPayPaymentId, refundCentavos)
+        const result = await refundPayment(booking.payment.paymongoPaymentId, refundCentavos)
         refundId = result.refundId
       }
 
