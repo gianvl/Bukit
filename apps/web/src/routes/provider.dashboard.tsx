@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link, createFileRoute, redirect } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarClock, Loader2, MapPin } from 'lucide-react'
@@ -14,8 +15,18 @@ import {
   type ProviderProfile,
   type ProviderStatus,
 } from '@/features/providers/api'
-import { Banknote, Calendar, CheckCircle2, Play, Power, Zap } from 'lucide-react'
+import {
+  Banknote,
+  Calendar,
+  CheckCircle2,
+  MapPinOff,
+  Navigation,
+  Play,
+  Power,
+  Zap,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useShareLocation, type ShareLocationStatus } from '@/features/providers/use-share-location'
 import { ApiError } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { getSession } from '@/lib/auth-client'
@@ -204,7 +215,7 @@ function AvailabilityCard({ profile }: { profile: ProviderProfile }) {
         <CardTitle className="text-base">Availability</CardTitle>
         <CardDescription>Control which bookings you receive.</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
         <div
           role="radiogroup"
           aria-label="Availability mode"
@@ -247,9 +258,76 @@ function AvailabilityCard({ profile }: { profile: ProviderProfile }) {
             )
           })}
         </div>
+        <LocationSharingIndicator availabilityMode={profile.availabilityMode} />
       </CardContent>
     </Card>
   )
+}
+
+function LocationSharingIndicator({ availabilityMode }: { availabilityMode: AvailabilityMode }) {
+  // On-demand matching needs a fresh location, so we share whenever FULL.
+  const sharing = availabilityMode === 'FULL'
+  const { status, lastUpdateAt } = useShareLocation(sharing)
+  const [tick, setTick] = useState(0)
+
+  // Re-render once a second so "updated Ns ago" stays fresh.
+  useEffect(() => {
+    if (!sharing) return
+    const t = setInterval(() => setTick((n) => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [sharing])
+
+  if (!sharing) {
+    return (
+      <p className="text-xs text-muted-foreground inline-flex items-center gap-2">
+        <MapPinOff className="size-3.5" />
+        Location not shared. On-demand matching needs your location.
+      </p>
+    )
+  }
+
+  return (
+    <p className="text-xs inline-flex items-center gap-2 tabular-nums">
+      <Navigation
+        className={cn(
+          'size-3.5',
+          status === 'sharing'
+            ? 'text-primary'
+            : status === 'denied' || status === 'unsupported'
+              ? 'text-destructive'
+              : 'text-muted-foreground',
+        )}
+      />
+      <span className={status === 'denied' || status === 'unsupported' ? 'text-destructive' : 'text-muted-foreground'}>
+        {locationLabel(status, lastUpdateAt, tick)}
+      </span>
+    </p>
+  )
+}
+
+function locationLabel(status: ShareLocationStatus, lastUpdateAt: Date | null, _tick: number) {
+  switch (status) {
+    case 'idle':
+    case 'requesting':
+      return 'Requesting location permission…'
+    case 'sharing':
+      return lastUpdateAt
+        ? `Sharing location · updated ${formatAgo(lastUpdateAt)}`
+        : 'Sharing location'
+    case 'denied':
+      return 'Location blocked. Enable in browser settings to receive on-demand bookings.'
+    case 'unsupported':
+      return 'This browser does not support geolocation.'
+  }
+}
+
+function formatAgo(d: Date): string {
+  const s = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000))
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  return `${h}h ago`
 }
 
 function AssignedBookingRow({ booking }: { booking: AssignedBooking }) {
