@@ -12,13 +12,23 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { safeRedirect } from '@/lib/safe-redirect'
+
+interface AuthSearch {
+  redirect?: string
+}
 
 export const Route = createFileRoute('/signin')({
   component: SignInPage,
+  validateSearch: (raw: Record<string, unknown>): AuthSearch => {
+    const r = safeRedirect(raw.redirect)
+    return r ? { redirect: r } : {}
+  },
 })
 
 function SignInPage() {
   const navigate = useNavigate()
+  const { redirect } = Route.useSearch()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -34,7 +44,11 @@ function SignInPage() {
       setError(error.message ?? 'Sign-in failed')
       return
     }
-    navigate({ to: '/' })
+    if (redirect) {
+      window.location.assign(redirect)
+    } else {
+      navigate({ to: '/' })
+    }
   }
 
   return (
@@ -42,7 +56,9 @@ function SignInPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Welcome back</CardTitle>
-          <CardDescription>Sign in to your Bukit account</CardDescription>
+          <CardDescription>
+            {redirect ? 'Sign in to continue where you left off.' : 'Sign in to your Bukit account.'}
+          </CardDescription>
         </CardHeader>
         <form onSubmit={onSubmit}>
           <CardContent className="space-y-4">
@@ -80,7 +96,11 @@ function SignInPage() {
             </Button>
             <p className="text-sm text-muted-foreground">
               No account?{' '}
-              <Link to="/signup" className="text-primary underline-offset-4 hover:underline">
+              <Link
+                to="/signup"
+                search={redirect ? { redirect } : {}}
+                className="text-primary underline-offset-4 hover:underline"
+              >
                 Create one
               </Link>
             </p>

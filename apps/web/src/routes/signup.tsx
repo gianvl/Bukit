@@ -12,13 +12,23 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { safeRedirect } from '@/lib/safe-redirect'
+
+interface AuthSearch {
+  redirect?: string
+}
 
 export const Route = createFileRoute('/signup')({
   component: SignUpPage,
+  validateSearch: (raw: Record<string, unknown>): AuthSearch => {
+    const r = safeRedirect(raw.redirect)
+    return r ? { redirect: r } : {}
+  },
 })
 
 function SignUpPage() {
   const navigate = useNavigate()
+  const { redirect } = Route.useSearch()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -35,7 +45,11 @@ function SignUpPage() {
       setError(error.message ?? 'Sign-up failed')
       return
     }
-    navigate({ to: '/' })
+    if (redirect) {
+      window.location.assign(redirect)
+    } else {
+      navigate({ to: '/' })
+    }
   }
 
   return (
@@ -93,7 +107,11 @@ function SignUpPage() {
             </Button>
             <p className="text-sm text-muted-foreground">
               Already have one?{' '}
-              <Link to="/signin" className="text-primary underline-offset-4 hover:underline">
+              <Link
+                to="/signin"
+                search={redirect ? { redirect } : {}}
+                className="text-primary underline-offset-4 hover:underline"
+              >
                 Sign in
               </Link>
             </p>
