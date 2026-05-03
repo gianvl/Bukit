@@ -35,10 +35,17 @@ export const auth = betterAuth({
     phoneNumber({
       sendOTP: async ({ phoneNumber: rawPhone, code }) => {
         const phone = normalizePHMobile(rawPhone) ?? rawPhone
-        await sendSms({
-          to: phone,
-          message: `Your Bukit verification code is ${code}. It expires in 10 minutes.`,
-        })
+        try {
+          await sendSms({
+            to: phone,
+            message: `Your Bukit verification code is ${code}. It expires in 10 minutes.`,
+          })
+          console.log(`[auth] OTP sent to ${phone}`)
+        } catch (err) {
+          // Surface PhilSMS errors instead of silently swallowing them.
+          console.error('[auth] sendOTP failed:', err)
+          throw err
+        }
       },
       otpLength: 6,
       expiresIn: 60 * 10, // 10 minutes

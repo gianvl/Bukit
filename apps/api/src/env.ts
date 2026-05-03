@@ -17,7 +17,7 @@ const EnvSchema = z.object({
   PAYMONGO_WEBHOOK_SECRET: z.string().min(1).optional(),
 
   // PhilSMS (PH SMS provider) — used for phone OTP delivery
-  PHILSMS_BASE_URL: z.url().default('https://app.philsms.com/api/v3'),
+  PHILSMS_BASE_URL: z.url().default('https://dashboard.philsms.com/api/v3'),
   PHILSMS_API_KEY: z.string().min(1),
   PHILSMS_SENDER_ID: z.string().min(1).default('PhilSMS'),
 })
