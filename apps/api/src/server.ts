@@ -1,0 +1,53 @@
+import Fastify from 'fastify'
+import cors from '@fastify/cors'
+import cookie from '@fastify/cookie'
+import sensible from '@fastify/sensible'
+import {
+  serializerCompiler,
+  validatorCompiler,
+  type ZodTypeProvider,
+} from 'fastify-type-provider-zod'
+import { env } from './env.js'
+import { registerErrorHandler } from './lib/errors.js'
+import { healthRoutes } from './routes/health.js'
+
+export async function buildApp() {
+  const app = Fastify({
+    logger: {
+      level: env.NODE_ENV === 'production' ? 'info' : 'debug',
+      transport:
+        env.NODE_ENV === 'development'
+          ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'HH:MM:ss' } }
+          : undefined,
+    },
+    trustProxy: env.NODE_ENV === 'production',
+  }).withTypeProvider<ZodTypeProvider>()
+
+  app.setValidatorCompiler(validatorCompiler)
+  app.setSerializerCompiler(serializerCompiler)
+
+  await app.register(sensible)
+  await app.register(cookie, { secret: env.COOKIE_SECRET })
+  await app.register(cors, {
+    origin: env.WEB_ORIGIN,
+    credentials: true,
+  })
+
+  registerErrorHandler(app)
+
+  await app.register(healthRoutes)
+
+  return app
+}
+
+async function start() {
+  const app = await buildApp()
+  try {
+    await app.listen({ host: env.HOST, port: env.PORT })
+  } catch (err) {
+    app.log.error(err)
+    process.exit(1)
+  }
+}
+
+start()
