@@ -29,16 +29,25 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     }
   }
 
-  const res = await fetch(url, {
-    ...rest,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      ...headers,
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
+  let res: Response
+  try {
+    res = await fetch(url, {
+      ...rest,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...headers,
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+  } catch (err) {
+    // Network-level failure (server down, DNS, offline). Map to a typed
+    // ApiError so the UI can show a friendlier "API offline" state.
+    throw new ApiError(0, 'NETWORK_OFFLINE', 'Could not reach the Bukit API', {
+      cause: err instanceof Error ? err.message : String(err),
+    })
+  }
 
   if (res.status === 204) return undefined as T
 

@@ -1,8 +1,10 @@
 import { Link, Outlet, createRootRouteWithContext, useRouter } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import type { QueryClient } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ErrorScreen } from '@/components/error-screen'
 import { signOut, useSession } from '@/lib/auth-client'
 
 export interface RouterContext {
@@ -12,9 +14,22 @@ export interface RouterContext {
 export const Route = createRootRouteWithContext<RouterContext>()({
   component: RootLayout,
   notFoundComponent: NotFound,
+  errorComponent: ({ error, reset }) => (
+    <RootLayoutShell>
+      <ErrorScreen error={error} reset={reset} />
+    </RootLayoutShell>
+  ),
 })
 
 function RootLayout() {
+  return (
+    <RootLayoutShell>
+      <Outlet />
+    </RootLayoutShell>
+  )
+}
+
+function RootLayoutShell({ children }: { children: ReactNode }) {
   const router = useRouter()
   const { data: session, isPending } = useSession()
 
@@ -65,9 +80,7 @@ function RootLayout() {
         </div>
       </header>
 
-      <main className="flex-1">
-        <Outlet />
-      </main>
+      <main className="flex-1">{children}</main>
 
       {import.meta.env.DEV && <TanStackRouterDevtools position="bottom-right" />}
     </div>
