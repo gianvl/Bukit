@@ -213,32 +213,7 @@ function ProviderDashboard() {
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Assigned bookings</CardTitle>
-          <CardDescription>
-            Jobs you've been matched to will show up here.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {bookingsPending ? (
-            <BookingsSkeleton />
-          ) : !bookings || bookings.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No assigned bookings yet. Once you're verified and a customer's request matches your
-              area, you'll see it here.
-            </p>
-          ) : (
-            <ul className="space-y-3">
-              {bookings.map((b) => (
-                <li key={b.id}>
-                  <AssignedBookingRow booking={b} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      <AssignedBookingsSection bookingsPending={bookingsPending} bookings={bookings} />
       </section>
     </>
   )
@@ -435,6 +410,74 @@ function formatAgo(d: Date): string {
   if (m < 60) return `${m}m ago`
   const h = Math.floor(m / 60)
   return `${h}h ago`
+}
+
+const PAST_STATUSES = new Set([
+  'COMPLETED',
+  'CANCELLED_BY_USER',
+  'CANCELLED_BY_PROVIDER',
+  'REFUNDED',
+])
+
+function AssignedBookingsSection({
+  bookingsPending,
+  bookings,
+}: {
+  bookingsPending: boolean
+  bookings: AssignedBooking[] | undefined
+}) {
+  const active = bookings?.filter((b) => !PAST_STATUSES.has(b.status)) ?? []
+  const past = bookings?.filter((b) => PAST_STATUSES.has(b.status)) ?? []
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Active jobs</CardTitle>
+          <CardDescription>
+            Bookings you're currently working on or about to start.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {bookingsPending ? (
+            <BookingsSkeleton />
+          ) : active.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No active jobs right now. Accept one from "Available in your area" above.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {active.map((b) => (
+                <li key={b.id}>
+                  <AssignedBookingRow booking={b} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      {past.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Past jobs</CardTitle>
+            <CardDescription>
+              {past.length} {past.length === 1 ? 'completed booking' : 'completed bookings'}.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-3">
+              {past.map((b) => (
+                <li key={b.id}>
+                  <AssignedBookingRow booking={b} />
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+    </>
+  )
 }
 
 function AssignedBookingRow({ booking }: { booking: AssignedBooking }) {

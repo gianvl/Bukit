@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
 import { Banknote, CalendarClock, MapPin, Receipt, Zap } from 'lucide-react'
 import { bookingsListQueryOptions } from '@/features/bookings/queries'
+import type { BookingSummary } from '@/features/bookings/api'
 import { BookingStatusBadge } from '@/features/bookings/status'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -54,62 +55,132 @@ function BookingsList() {
         ) : !bookings || bookings.length === 0 ? (
           <EmptyState />
         ) : (
-          <ul className="space-y-3">
-            {bookings.map((b, i) => (
-              <li key={b.id}>
-                <motion.div
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: i * 0.05, ease: [0.22, 1, 0.36, 1] }}
-                >
-                  <Link to="/bookings/$id" params={{ id: b.id }} className="block group">
-                    <Card className="transition-shadow group-hover:shadow-md">
-                      <CardHeader className="flex flex-row items-start justify-between gap-4">
-                        <div className="space-y-1">
-                          <CardTitle className="font-display text-lg">
-                            {b.serviceTier.name}
-                          </CardTitle>
-                          <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
-                            <CalendarClock className="size-3.5" />
-                            {formatScheduled(b.scheduledAt)}
-                          </p>
-                        </div>
-                        <div className="flex flex-col items-end gap-1.5">
-                          <BookingStatusBadge status={b.status as never} />
-                          <div className="flex items-center gap-1.5">
-                            {b.bookingMode === 'ON_DEMAND' && (
-                              <Badge variant="outline" className="gap-1">
-                                <Zap className="size-3" />
-                                Now
-                              </Badge>
-                            )}
-                            {b.paymentMethod === 'CASH' && (
-                              <Badge variant="outline" className="gap-1">
-                                <Banknote className="size-3" />
-                                Cash
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground inline-flex items-center gap-2">
-                          <MapPin className="size-3.5" />
-                          {b.addressLine1}, {b.city}
-                        </span>
-                        <span className="font-display text-base">
-                          {formatCentavos(b.totalCentavos)}
-                        </span>
-                      </CardContent>
-                    </Card>
-                  </Link>
-                </motion.div>
-              </li>
-            ))}
-          </ul>
+          <BookingSections bookings={bookings} />
         )}
       </section>
     </>
+  )
+}
+
+const PAST_STATUSES = new Set([
+  'COMPLETED',
+  'CANCELLED_BY_USER',
+  'CANCELLED_BY_PROVIDER',
+  'REFUNDED',
+])
+
+function BookingSections({ bookings }: { bookings: BookingSummary[] }) {
+  const active = bookings.filter((b) => !PAST_STATUSES.has(b.status))
+  const past = bookings.filter((b) => PAST_STATUSES.has(b.status))
+
+  return (
+    <div className="space-y-10">
+      <SectionList
+        eyebrow="In flight"
+        title={
+          active.length === 0
+            ? 'No active bookings'
+            : active.length === 1
+              ? '1 active booking'
+              : `${active.length} active bookings`
+        }
+        bookings={active}
+        emptyHint="Pick a tier and we'll match you in minutes."
+        startIndex={0}
+      />
+      {past.length > 0 && (
+        <SectionList
+          eyebrow="History"
+          title={past.length === 1 ? '1 past booking' : `${past.length} past bookings`}
+          bookings={past}
+          startIndex={active.length}
+        />
+      )}
+    </div>
+  )
+}
+
+function SectionList({
+  eyebrow,
+  title,
+  bookings,
+  emptyHint,
+  startIndex,
+}: {
+  eyebrow: string
+  title: string
+  bookings: BookingSummary[]
+  emptyHint?: string
+  startIndex: number
+}) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{eyebrow}</p>
+        <h2 className="font-display text-xl tracking-tight mt-1">{title}</h2>
+      </div>
+      {bookings.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{emptyHint}</p>
+      ) : (
+        <ul className="space-y-3">
+          {bookings.map((b, i) => (
+            <li key={b.id}>
+              <BookingRow booking={b} index={startIndex + i} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function BookingRow({ booking, index }: { booking: BookingSummary; index: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, delay: index * 0.05, ease: [0.22, 1, 0.36, 1] }}
+    >
+      <Link to="/bookings/$id" params={{ id: booking.id }} className="block group">
+        <Card className="transition-shadow group-hover:shadow-md">
+          <CardHeader className="flex flex-row items-start justify-between gap-4">
+            <div className="space-y-1">
+              <CardTitle className="font-display text-lg">{booking.serviceTier.name}</CardTitle>
+              <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
+                <CalendarClock className="size-3.5" />
+                {formatScheduled(booking.scheduledAt)}
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-1.5">
+              <BookingStatusBadge status={booking.status as never} />
+              <div className="flex items-center gap-1.5">
+                {booking.bookingMode === 'ON_DEMAND' && (
+                  <Badge variant="outline" className="gap-1">
+                    <Zap className="size-3" />
+                    Now
+                  </Badge>
+                )}
+                {booking.paymentMethod === 'CASH' && (
+                  <Badge variant="outline" className="gap-1">
+                    <Banknote className="size-3" />
+                    Cash
+                  </Badge>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground inline-flex items-center gap-2">
+              <MapPin className="size-3.5" />
+              {booking.addressLine1}, {booking.city}
+            </span>
+            <span className="font-display text-base">
+              {formatCentavos(booking.totalCentavos)}
+            </span>
+          </CardContent>
+        </Card>
+      </Link>
+    </motion.div>
   )
 }
 
