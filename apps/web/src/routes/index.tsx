@@ -23,7 +23,7 @@ function LandingPage() {
         </p>
         <div className="flex justify-center gap-3">
           <Button asChild size="lg">
-            <Link to="/book">Book a cleaner</Link>
+            <Link to="/services">Book a cleaner</Link>
           </Button>
           <Button asChild size="lg" variant="outline">
             <Link to="/provider">Become a provider</Link>

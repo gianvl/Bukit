@@ -12,6 +12,7 @@ import { registerErrorHandler } from './lib/errors.js'
 import { registerAuth } from './lib/auth-fastify.js'
 import { healthRoutes } from './routes/health.js'
 import { meRoutes } from './routes/me.js'
+import { serviceTierRoutes } from './routes/service-tiers.js'
 
 export async function buildApp() {
   const app = Fastify({
@@ -40,6 +41,7 @@ export async function buildApp() {
   await registerAuth(app)
   await app.register(healthRoutes)
   await app.register(meRoutes)
+  await app.register(serviceTierRoutes)
 
   return app
 }

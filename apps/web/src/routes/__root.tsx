@@ -34,7 +34,7 @@ function RootLayout() {
           </Link>
           <nav className="flex items-center gap-2 text-sm">
             <Button asChild variant="ghost" size="sm">
-              <Link to="/book">Book</Link>
+              <Link to="/services">Book</Link>
             </Button>
             <Button asChild variant="ghost" size="sm">
               <Link to="/provider">Provider</Link>
