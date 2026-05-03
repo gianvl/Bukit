@@ -1,24 +1,23 @@
 import { useState } from 'react'
 import { createFileRoute, redirect } from '@tanstack/react-router'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, Briefcase, Loader2, ShoppingBag } from 'lucide-react'
+import { ArrowRight, Briefcase, Loader2, ShoppingBag, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import { getSession } from '@/lib/auth-client'
 import { meQueryOptions, submitOnboarding } from '@/features/me/api'
 import { ApiError } from '@/lib/api'
 import { safeRedirect } from '@/lib/safe-redirect'
 import { cn } from '@/lib/utils'
+import {
+  CreamBackground,
+  PageEyebrow,
+  PageStat,
+  PageStats,
+  PageTitle,
+} from '@/components/page-shell'
 
 interface OnboardingSearch {
   redirect?: string
@@ -41,7 +40,6 @@ export const Route = createFileRoute('/onboarding')({
     }
     const me = await context.queryClient.ensureQueryData(meQueryOptions)
     if (me?.onboardedAt) {
-      // Already onboarded — nothing to do here.
       throw redirect({ to: search.redirect ?? '/' })
     }
   },
@@ -72,7 +70,6 @@ function OnboardingPage() {
       }),
     onSuccess: async (me) => {
       await queryClient.invalidateQueries({ queryKey: meQueryOptions.queryKey })
-      // Role-aware default destination.
       const defaultPath =
         me.role === 'PROVIDER' ? '/provider/dashboard' : '/services'
       window.location.assign(redirectTo ?? defaultPath)
@@ -87,117 +84,147 @@ function OnboardingPage() {
     (role !== 'PROVIDER' || citiesText.split(',').some((c) => c.trim().length > 0))
 
   return (
-    <section className="min-h-[calc(100dvh-3.5rem)] flex items-center justify-center px-6 py-12">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-            One last step
-          </p>
-          <CardTitle className="font-display text-2xl mt-2">
-            Set up your Bukit account
-          </CardTitle>
-          <CardDescription>
-            Tell us your name and how you'd like to use Bukit. You can switch later.
-          </CardDescription>
-        </CardHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            setError(null)
-            submit.mutate()
-          }}
-        >
-          <CardContent className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="name">Your name</Label>
-              <Input
-                id="name"
-                autoComplete="name"
-                required
-                placeholder="Maria Santos"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
+    <section className="relative min-h-[calc(100dvh-3.5rem)] overflow-hidden">
+      <CreamBackground />
+      <div className="relative mx-auto max-w-6xl px-6 py-12 lg:py-20 grid lg:grid-cols-[1fr_auto] gap-12 items-center">
+        {/* Side panel — desktop only */}
+        <aside className="hidden lg:block max-w-md">
+          <PageEyebrow icon={Sparkles}>One last step</PageEyebrow>
+          <div className="mt-6">
+            <PageTitle accent={role === 'PROVIDER' ? 'earning.' : 'booking.'}>
+              {role === 'PROVIDER' ? 'You are minutes away from' : 'You are minutes away from'}
+            </PageTitle>
+            <p className="mt-6 text-muted-foreground leading-relaxed">
+              Tell us your name and how you'd like to use Bukit. Either choice is reversible —
+              customers can apply to provide later.
+            </p>
+          </div>
+          <PageStats className="mt-10">
+            <PageStat kpi="3" label="cities served" />
+            <PageStat kpi="24h" label="provider review" />
+            <PageStat kpi="₱500" label="from / cleaning" />
+          </PageStats>
+        </aside>
 
-            <div className="space-y-2">
-              <Label className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                I'm here to
-              </Label>
-              <div role="radiogroup" className="grid gap-2 sm:grid-cols-2">
-                <RoleOption
-                  value="USER"
-                  active={role === 'USER'}
-                  onPick={() => setRole('USER')}
-                  Icon={ShoppingBag}
-                  label="Book services"
-                  description="Get vetted home cleaners on demand or scheduled."
-                />
-                <RoleOption
-                  value="PROVIDER"
-                  active={role === 'PROVIDER'}
-                  onPick={() => setRole('PROVIDER')}
-                  Icon={Briefcase}
-                  label="Earn as a provider"
-                  description="Accept bookings in your area. Verification within 24h."
+        {/* Form card */}
+        <div className="w-full max-w-md mx-auto lg:mx-0 lg:w-[26rem]">
+          <div className="rounded-2xl border bg-card/90 backdrop-blur-sm shadow-[0_30px_80px_-30px_rgba(15,23,42,0.25)] p-7 sm:p-8">
+            <PageEyebrow icon={Sparkles}>Set up your account</PageEyebrow>
+            <h2 className="mt-3 font-display text-2xl tracking-tight lg:hidden">
+              Welcome to Bukit
+            </h2>
+            <h2 className="mt-3 font-display text-2xl tracking-tight hidden lg:block">
+              Tell us about you
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              You can switch later if you change your mind.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                setError(null)
+                submit.mutate()
+              }}
+              className="mt-6 space-y-5"
+            >
+              <div className="space-y-2">
+                <Label htmlFor="name" className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                  Your name
+                </Label>
+                <Input
+                  id="name"
+                  autoComplete="name"
+                  required
+                  placeholder="Maria Santos"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                 />
               </div>
-            </div>
 
-            {role === 'PROVIDER' && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="cities">Cities you serve</Label>
-                  <Input
-                    id="cities"
-                    placeholder="Taguig, Makati, Pasig"
-                    required
-                    value={citiesText}
-                    onChange={(e) => setCitiesText(e.target.value)}
+              <div className="space-y-2">
+                <Label className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                  I'm here to
+                </Label>
+                <div role="radiogroup" className="grid gap-2 sm:grid-cols-2">
+                  <RoleOption
+                    active={role === 'USER'}
+                    onPick={() => setRole('USER')}
+                    Icon={ShoppingBag}
+                    label="Book services"
+                    description="Vetted home cleaners on demand or scheduled."
                   />
-                  <p className="text-xs text-muted-foreground">Comma-separated.</p>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bio">Short bio (optional)</Label>
-                  <Textarea
-                    id="bio"
-                    rows={3}
-                    maxLength={500}
-                    placeholder="5 years of professional residential cleaning."
-                    value={bio}
-                    onChange={(e) => setBio(e.target.value)}
+                  <RoleOption
+                    active={role === 'PROVIDER'}
+                    onPick={() => setRole('PROVIDER')}
+                    Icon={Briefcase}
+                    label="Earn as a provider"
+                    description="Accept bookings in your area. KYC review within 24h."
                   />
                 </div>
-              </>
-            )}
+              </div>
 
-            {error && (
-              <p className="text-sm text-destructive" role="alert">
-                {error}
-              </p>
-            )}
-          </CardContent>
-          <CardFooter>
-            <Button
-              type="submit"
-              className="w-full h-11 rounded-full"
-              disabled={submit.isPending || !canSubmit}
-            >
-              {submit.isPending ? (
+              {role === 'PROVIDER' && (
                 <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Saving…
-                </>
-              ) : (
-                <>
-                  Continue
-                  <ArrowRight className="size-4" />
+                  <div className="space-y-2">
+                    <Label htmlFor="cities" className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                      Cities you serve
+                    </Label>
+                    <Input
+                      id="cities"
+                      placeholder="Taguig, Makati, Pasig"
+                      required
+                      value={citiesText}
+                      onChange={(e) => setCitiesText(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">Comma-separated.</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bio" className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                      Short bio (optional)
+                    </Label>
+                    <Textarea
+                      id="bio"
+                      rows={3}
+                      maxLength={500}
+                      placeholder="5 years of professional residential cleaning."
+                      value={bio}
+                      onChange={(e) => setBio(e.target.value)}
+                    />
+                  </div>
                 </>
               )}
-            </Button>
-          </CardFooter>
-        </form>
-      </Card>
+
+              {error && (
+                <p
+                  role="alert"
+                  className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                >
+                  {error}
+                </p>
+              )}
+
+              <Button
+                type="submit"
+                className="w-full h-11 rounded-full"
+                disabled={submit.isPending || !canSubmit}
+              >
+                {submit.isPending ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    Continue
+                    <ArrowRight className="size-4" />
+                  </>
+                )}
+              </Button>
+            </form>
+          </div>
+        </div>
+      </div>
     </section>
   )
 }
@@ -209,7 +236,6 @@ function RoleOption({
   label,
   description,
 }: {
-  value: 'USER' | 'PROVIDER'
   active: boolean
   onPick: () => void
   Icon: typeof ShoppingBag
