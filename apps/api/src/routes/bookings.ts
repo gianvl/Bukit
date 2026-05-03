@@ -7,10 +7,12 @@ import { refundPayment } from '../lib/paymongo.js'
 
 const BookingStatusEnum = z.enum([
   'PENDING_PAYMENT',
+  'IN_ESCROW',
   'CONFIRMED',
   'PROVIDER_ASSIGNED',
   'EN_ROUTE',
   'IN_PROGRESS',
+  'PENDING_CASH_CONFIRM',
   'COMPLETED',
   'CANCELLED_BY_USER',
   'CANCELLED_BY_PROVIDER',
@@ -24,6 +26,8 @@ const BookingEventTypeEnum = z.enum([
   'EN_ROUTE',
   'ARRIVED',
   'STARTED',
+  'CUSTOMER_CONFIRMED',
+  'PROVIDER_CASH_RECEIVED',
   'COMPLETED',
   'CANCELLED',
   'REFUNDED',

@@ -24,10 +24,12 @@ const AssignedBookingDto = z.object({
   id: z.string(),
   status: z.enum([
     'PENDING_PAYMENT',
+    'IN_ESCROW',
     'CONFIRMED',
     'PROVIDER_ASSIGNED',
     'EN_ROUTE',
     'IN_PROGRESS',
+    'PENDING_CASH_CONFIRM',
     'COMPLETED',
     'CANCELLED_BY_USER',
     'CANCELLED_BY_PROVIDER',

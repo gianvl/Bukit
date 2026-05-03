@@ -25,10 +25,12 @@ enum ProviderStatus {
 
 enum BookingStatus {
   PENDING_PAYMENT
-  CONFIRMED
+  IN_ESCROW                  // online-paid, funds held until completion
+  CONFIRMED                  // cash booking, no upfront payment
   PROVIDER_ASSIGNED
   EN_ROUTE
   IN_PROGRESS
+  PENDING_CASH_CONFIRM       // cash: customer marked done, awaiting provider confirm
   COMPLETED
   CANCELLED_BY_USER
   CANCELLED_BY_PROVIDER
@@ -42,6 +44,8 @@ enum BookingEventType {
   EN_ROUTE
   ARRIVED
   STARTED
+  CUSTOMER_CONFIRMED         // customer marked the job done
+  PROVIDER_CASH_RECEIVED     // provider confirmed cash receipt (cash bookings)
   COMPLETED
   CANCELLED
   REFUNDED
@@ -54,6 +58,27 @@ enum PaymentStatus {
   CAPTURED
   FAILED
   REFUNDED
+}
+
+enum PaymentMethod {
+  ONLINE
+  CASH
+}
+
+enum BookingMode {
+  ON_DEMAND
+  SCHEDULED
+}
+
+enum ProviderAvailabilityMode {
+  OFFLINE
+  SCHEDULED_ONLY
+  FULL
+}
+
+enum PayoutStatus {
+  PENDING
+  PAID
 }
 
 // ─── Auth (Better-Auth managed) ───────────────────────────────────────────
@@ -145,12 +170,22 @@ model ProviderProfile {
   // Service area (PH cities the provider operates in)
   cities String[] @default([])
 
+  // Availability — controls which bookings the provider sees and gets matched to
+  availabilityMode ProviderAvailabilityMode @default(OFFLINE)
+
+  // Live location — updated by the provider's client while online (Phase B)
+  currentLatitude  Float?
+  currentLongitude Float?
+  lastLocationAt   DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   bookings Booking[] @relation("BookingsByProvider")
+  payouts  Payout[]
 
   @@index([status])
+  @@index([availabilityMode])
 }
 
 model ServiceTier {
@@ -177,8 +212,14 @@ model Booking {
   serviceTierId   String
   serviceTier     ServiceTier      @relation(fields: [serviceTierId], references: [id])
   status          BookingStatus    @default(PENDING_PAYMENT)
+  paymentMethod   PaymentMethod    @default(ONLINE)
+  bookingMode     BookingMode      @default(SCHEDULED)
   scheduledAt     DateTime
   durationMinutes Int
+
+  // Mutual completion timestamps
+  customerCompletedAt     DateTime?
+  providerCashConfirmedAt DateTime?
 
   // Address snapshot at booking time
   addressLine1 String
@@ -201,11 +242,13 @@ model Booking {
   events  BookingEvent[]
   payment Payment?
   review  Review?
+  payout  Payout?
 
   @@index([userId])
   @@index([providerId])
   @@index([status])
   @@index([scheduledAt])
+  @@index([bookingMode, status])
 }
 
 model BookingEvent {
@@ -240,6 +283,22 @@ model Payment {
   updatedAt    DateTime  @updatedAt
 
   @@index([status])
+}
+
+model Payout {
+  id             String          @id @default(cuid(2))
+  providerId     String
+  provider       ProviderProfile @relation(fields: [providerId], references: [id])
+  bookingId      String          @unique
+  booking        Booking         @relation(fields: [bookingId], references: [id])
+  amountCentavos Int
+  status         PayoutStatus    @default(PENDING)
+  createdAt      DateTime        @default(now())
+  paidAt         DateTime?
+  notes          String?
+
+  @@index([providerId, status])
+  @@index([status, createdAt])
 }
 
 model Review {
