@@ -1,8 +1,9 @@
-import { Link, Outlet, createRootRouteWithContext } from '@tanstack/react-router'
+import { Link, Outlet, createRootRouteWithContext, useRouter } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 import type { QueryClient } from '@tanstack/react-query'
 import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { signOut, useSession } from '@/lib/auth-client'
 
 export interface RouterContext {
   queryClient: QueryClient
@@ -14,6 +15,15 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 })
 
 function RootLayout() {
+  const router = useRouter()
+  const { data: session, isPending } = useSession()
+
+  async function handleSignOut() {
+    await signOut()
+    router.invalidate()
+    router.navigate({ to: '/' })
+  }
+
   return (
     <div className="min-h-dvh flex flex-col">
       <header className="border-b">
@@ -29,6 +39,25 @@ function RootLayout() {
             <Button asChild variant="ghost" size="sm">
               <Link to="/provider">Provider</Link>
             </Button>
+            {!isPending && session?.user ? (
+              <>
+                <span className="hidden sm:inline text-xs text-muted-foreground px-2">
+                  {session.user.name}
+                </span>
+                <Button variant="outline" size="sm" onClick={handleSignOut}>
+                  Sign out
+                </Button>
+              </>
+            ) : !isPending ? (
+              <>
+                <Button asChild variant="ghost" size="sm">
+                  <Link to="/signin">Sign in</Link>
+                </Button>
+                <Button asChild size="sm">
+                  <Link to="/signup">Sign up</Link>
+                </Button>
+              </>
+            ) : null}
           </nav>
         </div>
       </header>

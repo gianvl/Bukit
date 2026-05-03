@@ -9,7 +9,9 @@ import {
 } from 'fastify-type-provider-zod'
 import { env } from './env.js'
 import { registerErrorHandler } from './lib/errors.js'
+import { registerAuth } from './lib/auth-fastify.js'
 import { healthRoutes } from './routes/health.js'
+import { meRoutes } from './routes/me.js'
 
 export async function buildApp() {
   const app = Fastify({
@@ -35,7 +37,9 @@ export async function buildApp() {
 
   registerErrorHandler(app)
 
+  await registerAuth(app)
   await app.register(healthRoutes)
+  await app.register(meRoutes)
 
   return app
 }

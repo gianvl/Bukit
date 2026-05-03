@@ -56,22 +56,74 @@ enum PaymentStatus {
   REFUNDED
 }
 
-model User {
-  id             String   @id @default(cuid(2))
-  email          String   @unique
-  hashedPassword String
-  fullName       String
-  phone          String?
-  role           UserRole @default(USER)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+// ─── Auth (Better-Auth managed) ───────────────────────────────────────────
 
+model User {
+  id            String   @id
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  name          String
+  image         String?
+  // Custom fields registered via Better-Auth additionalFields
+  role          UserRole @default(USER)
+  phone         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions        Session[]
+  accounts        Account[]
   providerProfile ProviderProfile?
   bookings        Booking[]        @relation("BookingsByUser")
   reviews         Review[]         @relation("ReviewsByUser")
 
   @@index([role])
 }
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+// ─── Domain ───────────────────────────────────────────────────────────────
 
 model ProviderProfile {
   id          String         @id @default(cuid(2))
@@ -100,31 +152,30 @@ model ProviderProfile {
 }
 
 model ServiceTier {
-  id                  String   @id @default(cuid(2))
-  slug                String   @unique
-  name                String
-  description         String
-  basePriceCentavos   Int
-  estimatedMinutes    Int
-  sortOrder           Int      @default(0)
-  isActive            Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                String   @id @default(cuid(2))
+  slug              String   @unique
+  name              String
+  description       String
+  basePriceCentavos Int
+  estimatedMinutes  Int
+  sortOrder         Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   bookings Booking[]
 }
 
 model Booking {
-  id            String        @id @default(cuid(2))
-  userId        String
-  user          User          @relation("BookingsByUser", fields: [userId], references: [id])
-  providerId    String?
-  provider      ProviderProfile? @relation("BookingsByProvider", fields: [providerId], references: [id])
-  serviceTierId String
-  serviceTier   ServiceTier   @relation(fields: [serviceTierId], references: [id])
-
-  status        BookingStatus @default(PENDING_PAYMENT)
-  scheduledAt   DateTime
+  id              String           @id @default(cuid(2))
+  userId          String
+  user            User             @relation("BookingsByUser", fields: [userId], references: [id])
+  providerId      String?
+  provider        ProviderProfile? @relation("BookingsByProvider", fields: [providerId], references: [id])
+  serviceTierId   String
+  serviceTier     ServiceTier      @relation(fields: [serviceTierId], references: [id])
+  status          BookingStatus    @default(PENDING_PAYMENT)
+  scheduledAt     DateTime
   durationMinutes Int
 
   // Address snapshot at booking time
@@ -132,7 +183,7 @@ model Booking {
   addressLine2 String?
   barangay     String?
   city         String
-  province     String   @default("Metro Manila")
+  province     String  @default("Metro Manila")
   postalCode   String?
   latitude     Float?
   longitude    Float?
@@ -145,9 +196,9 @@ model Booking {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  events   BookingEvent[]
-  payment  Payment?
-  review   Review?
+  events  BookingEvent[]
+  payment Payment?
+  review  Review?
 
   @@index([userId])
   @@index([providerId])
@@ -168,12 +219,12 @@ model BookingEvent {
 }
 
 model Payment {
-  id        String        @id @default(cuid(2))
-  bookingId String        @unique
-  booking   Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  status    PaymentStatus @default(PENDING)
+  id             String        @id @default(cuid(2))
+  bookingId      String        @unique
+  booking        Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  status         PaymentStatus @default(PENDING)
   amountCentavos Int
-  currency  String        @default("PHP")
+  currency       String        @default("PHP")
 
   // HelixPay references
   helixPayCheckoutId String? @unique
