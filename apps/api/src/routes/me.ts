@@ -2,6 +2,10 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { requireSession } from '../lib/auth-fastify.js'
+import { env } from '../env.js'
+
+/** Skip KYC review locally; production still requires manual approval. */
+const initialProviderStatus = env.NODE_ENV === 'production' ? 'PENDING_KYC' : 'ACTIVE'
 
 const RoleEnum = z.enum(['USER', 'PROVIDER', 'ADMIN'])
 
@@ -89,7 +93,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
             where: { userId: user.id },
             create: {
               userId: user.id,
-              status: 'PENDING_KYC',
+              status: initialProviderStatus,
               cities: cities ?? [],
               bio,
             },

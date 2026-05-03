@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { ApiError } from '@/lib/api'
 import { CreamBackground, PageEyebrow, PageStat, PageStats, PageTitle } from '@/components/page-shell'
 
-export const Route = createFileRoute('/provider')({
+export const Route = createFileRoute('/provider/')({
   component: ProviderApply,
   beforeLoad: async ({ location }) => {
     const { data } = await getSession()

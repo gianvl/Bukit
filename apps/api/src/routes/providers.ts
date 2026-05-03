@@ -4,6 +4,14 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma.js'
 import { requireSession } from '../lib/auth-fastify.js'
 import { haversineKm, ON_DEMAND_RADIUS_KM } from '../lib/distance.js'
+import { env } from '../env.js'
+
+/**
+ * In non-production environments we skip manual KYC review entirely so
+ * developers can test the full provider flow without touching the DB.
+ * Production keeps PENDING_KYC so a real admin must approve every account.
+ */
+const initialProviderStatus = env.NODE_ENV === 'production' ? 'PENDING_KYC' : 'ACTIVE'
 
 const ProviderStatusEnum = z.enum(['PENDING_KYC', 'ACTIVE', 'SUSPENDED', 'REJECTED'])
 const AvailabilityModeEnum = z.enum(['OFFLINE', 'SCHEDULED_ONLY', 'FULL'])
@@ -91,7 +99,7 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
         return tx.providerProfile.create({
           data: {
             userId,
-            status: 'PENDING_KYC',
+            status: initialProviderStatus,
             bio: req.body.bio,
             cities: req.body.cities ?? [],
           },
