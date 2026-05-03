@@ -21,6 +21,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { ApiError } from '@/lib/api'
+import { BookingMap } from '@/components/booking-map'
 import {
   bookingDetailQueryOptions,
   bookingsListQueryOptions,
@@ -120,6 +121,18 @@ function BookingDetailPage() {
       </header>
 
       <CompletionCallout booking={booking} />
+
+      {booking.latitude !== null && booking.longitude !== null && (
+        <BookingMap
+          pins={[
+            {
+              latitude: booking.latitude,
+              longitude: booking.longitude,
+              label: `${booking.addressLine1}, ${booking.city}`,
+            },
+          ]}
+        />
+      )}
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
