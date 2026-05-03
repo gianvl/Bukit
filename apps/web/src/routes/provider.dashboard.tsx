@@ -17,6 +17,7 @@ import {
 } from '@/features/providers/api'
 import {
   Banknote,
+  Briefcase,
   Calendar,
   CheckCircle2,
   MapPinOff,
@@ -28,6 +29,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useShareLocation, type ShareLocationStatus } from '@/features/providers/use-share-location'
 import { getSocket } from '@/lib/socket'
+import { PageEyebrow, PageHero, PageStat, PageStats, PageTitle } from '@/components/page-shell'
 import { ApiError } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { getSession } from '@/lib/auth-client'
@@ -107,18 +109,43 @@ function ProviderDashboard() {
 
   const meta = STATUS_LABEL[profile.status]
 
-  return (
-    <section className="mx-auto max-w-3xl px-6 py-10 space-y-6">
-      <header className="flex items-start justify-between gap-4">
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">Provider dashboard</p>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {profile.cities[0] ? `Working in ${profile.cities.join(', ')}` : 'Welcome aboard'}
-          </h1>
-        </div>
-        <Badge variant={meta.tone}>{meta.label}</Badge>
-      </header>
+  const assignedActive =
+    bookings?.filter(
+      (b) =>
+        b.status === 'PROVIDER_ASSIGNED' ||
+        b.status === 'IN_PROGRESS' ||
+        b.status === 'EN_ROUTE' ||
+        b.status === 'PENDING_CASH_CONFIRM',
+    ).length ?? 0
+  const completedToday =
+    bookings?.filter((b) => b.status === 'COMPLETED' && isToday(b.scheduledAt)).length ?? 0
 
+  return (
+    <>
+      <PageHero maxWidth="max-w-5xl">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="max-w-2xl">
+            <PageEyebrow icon={Briefcase}>Provider dashboard</PageEyebrow>
+            <div className="mt-6">
+              <PageTitle accent={profile.cities[0] ? `${profile.cities.join(', ')}.` : 'aboard.'}>
+                {profile.cities[0] ? 'Working in' : 'Welcome'}
+              </PageTitle>
+            </div>
+          </div>
+          <Badge variant={meta.tone} className="self-start">
+            {meta.label}
+          </Badge>
+        </div>
+        {profile.status === 'ACTIVE' && (
+          <PageStats className="grid-cols-3 max-w-md">
+            <PageStat kpi={available?.length ?? 0} label="available now" />
+            <PageStat kpi={assignedActive} label="active jobs" />
+            <PageStat kpi={completedToday} label="done today" />
+          </PageStats>
+        )}
+      </PageHero>
+
+      <section className="mx-auto max-w-5xl px-6 py-10 space-y-6">
       {profile.status === 'ACTIVE' && <AvailabilityCard profile={profile} />}
 
       {profile.status === 'PENDING_KYC' && (
@@ -185,7 +212,18 @@ function ProviderDashboard() {
           )}
         </CardContent>
       </Card>
-    </section>
+      </section>
+    </>
+  )
+}
+
+function isToday(iso: string): boolean {
+  const d = new Date(iso)
+  const now = new Date()
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
   )
 }
 
