@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import cookie from '@fastify/cookie'
 import sensible from '@fastify/sensible'
+import rawBody from 'fastify-raw-body'
 import {
   serializerCompiler,
   validatorCompiler,
@@ -13,6 +14,8 @@ import { registerAuth } from './lib/auth-fastify.js'
 import { healthRoutes } from './routes/health.js'
 import { meRoutes } from './routes/me.js'
 import { serviceTierRoutes } from './routes/service-tiers.js'
+import { paymentRoutes } from './routes/payments.js'
+import { webhookRoutes } from './routes/webhooks.js'
 
 export async function buildApp() {
   const app = Fastify({
@@ -30,6 +33,12 @@ export async function buildApp() {
   app.setSerializerCompiler(serializerCompiler)
 
   await app.register(sensible)
+  await app.register(rawBody, {
+    field: 'rawBody',
+    global: false,
+    encoding: false, // Buffer
+    runFirst: true,
+  })
   await app.register(cookie, { secret: env.COOKIE_SECRET })
   await app.register(cors, {
     origin: env.WEB_ORIGIN,
@@ -42,6 +51,8 @@ export async function buildApp() {
   await app.register(healthRoutes)
   await app.register(meRoutes)
   await app.register(serviceTierRoutes)
+  await app.register(paymentRoutes)
+  await app.register(webhookRoutes)
 
   return app
 }
