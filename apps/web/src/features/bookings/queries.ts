@@ -49,8 +49,12 @@ export interface BookingDetail extends BookingSummary {
   basePriceCentavos: number
   events: BookingEvent[]
   payment: { status: PaymentStatus; amountCentavos: number } | null
-  /** Provider contact details — only populated after PROVIDER_ASSIGNED. */
+  /** Which side is viewing — drives role-aware UI on the detail page. */
+  viewerRole: 'CUSTOMER' | 'PROVIDER'
+  /** Provider contact — populated only when viewerRole=CUSTOMER and assigned. */
   provider: { name: string; phoneNumber: string | null } | null
+  /** Customer contact — populated only when viewerRole=PROVIDER and accepted. */
+  customer: { name: string; phoneNumber: string | null } | null
 }
 
 export const bookingsListQueryOptions = queryOptions({

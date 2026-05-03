@@ -2,7 +2,8 @@ import { useEffect } from 'react'
 import { Link, createFileRoute, redirect } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Banknote, CalendarClock, CheckCircle2, CreditCard, Loader2, MapPin, NotebookPen, Phone, User, XCircle, Zap } from 'lucide-react'
+import { Banknote, CalendarClock, CheckCircle2, CreditCard, Loader2, MapPin, NotebookPen, Phone, Play, User, XCircle, Zap } from 'lucide-react'
+import { confirmCashReceived, startBooking } from '@/features/providers/api'
 import { Badge } from '@/components/ui/badge'
 import {
   cancelBooking,
@@ -175,14 +176,21 @@ function BookingDetailPage() {
 
       <CompletionCallout booking={booking} />
 
-      {booking.provider && <ProviderContactCard provider={booking.provider} />}
+      <ProviderActionsPanel booking={booking} />
+
+      {booking.provider && (
+        <CounterpartyCard label="Your provider" party={booking.provider} />
+      )}
+      {booking.customer && (
+        <CounterpartyCard label="Customer" party={booking.customer} />
+      )}
 
       <BookingMapPanel booking={booking} />
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <CardTitle className="text-base">Booking details</CardTitle>
-          <CancelBookingButton booking={booking} />
+          {booking.viewerRole === 'CUSTOMER' && <CancelBookingButton booking={booking} />}
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <Row icon={<MapPin className="size-4" />} label="Address">
@@ -417,32 +425,32 @@ function formatLocationAge(iso: string | null): string {
   return `${Math.floor(m / 60)}h ago`
 }
 
-function ProviderContactCard({
-  provider,
+function CounterpartyCard({
+  label,
+  party,
 }: {
-  provider: NonNullable<BookingDetail['provider']>
+  label: string
+  party: { name: string; phoneNumber: string | null }
 }) {
   return (
     <Card>
       <CardHeader>
-        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-          Your provider
-        </p>
+        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
         <CardTitle className="font-display text-xl mt-2 inline-flex items-center gap-3">
           <span className="inline-flex size-9 items-center justify-center rounded-full bg-primary/10 text-primary">
             <User className="size-4" />
           </span>
-          {provider.name}
+          {party.name}
         </CardTitle>
       </CardHeader>
       <CardContent className="flex items-center justify-between gap-3">
         <span className="text-sm text-muted-foreground inline-flex items-center gap-2">
           <Phone className="size-3.5" />
-          {provider.phoneNumber ? formatPhoneForDisplay(provider.phoneNumber) : 'No phone on file'}
+          {party.phoneNumber ? formatPhoneForDisplay(party.phoneNumber) : 'No phone on file'}
         </span>
-        {provider.phoneNumber && (
+        {party.phoneNumber && (
           <Button asChild variant="outline" size="sm" className="rounded-full">
-            <a href={`tel:${provider.phoneNumber}`}>
+            <a href={`tel:${party.phoneNumber}`}>
               <Phone className="size-3.5" />
               Call
             </a>
@@ -460,6 +468,106 @@ function formatPhoneForDisplay(e164: string): string {
   return e164
 }
 
+function ProviderActionsPanel({ booking }: { booking: BookingDetail }) {
+  const queryClient = useQueryClient()
+  const start = useMutation({
+    mutationFn: () => startBooking(booking.id),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: bookingDetailQueryOptions(booking.id).queryKey,
+      }),
+  })
+  const confirm = useMutation({
+    mutationFn: () => confirmCashReceived(booking.id),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: bookingDetailQueryOptions(booking.id).queryKey,
+      }),
+  })
+
+  if (booking.viewerRole !== 'PROVIDER') return null
+
+  if (booking.status === 'PROVIDER_ASSIGNED') {
+    return (
+      <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 flex items-start gap-3">
+        <Play className="size-5 text-primary mt-0.5" />
+        <div className="flex-1 text-sm">
+          <p className="font-medium text-foreground">Ready to start?</p>
+          <p className="text-muted-foreground">
+            Tap Start when you arrive at the customer's location.
+          </p>
+          {start.error && (
+            <p className="mt-2 text-destructive">
+              {start.error instanceof ApiError ? start.error.message : 'Could not start'}
+            </p>
+          )}
+        </div>
+        <Button onClick={() => start.mutate()} disabled={start.isPending}>
+          {start.isPending ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              Starting…
+            </>
+          ) : (
+            <>
+              <Play className="size-4" />
+              Start service
+            </>
+          )}
+        </Button>
+      </div>
+    )
+  }
+
+  if (booking.status === 'IN_PROGRESS') {
+    return (
+      <div className="rounded-lg border bg-muted/40 p-4 flex items-start gap-3">
+        <Loader2 className="size-5 text-muted-foreground mt-0.5 animate-spin" />
+        <div className="flex-1 text-sm">
+          <p className="font-medium text-foreground">Service in progress</p>
+          <p className="text-muted-foreground">
+            Waiting for the customer to confirm completion.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (booking.status === 'PENDING_CASH_CONFIRM') {
+    return (
+      <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 flex items-start gap-3">
+        <Banknote className="size-5 text-primary mt-0.5" />
+        <div className="flex-1 text-sm">
+          <p className="font-medium text-foreground">Did you receive the cash?</p>
+          <p className="text-muted-foreground">
+            Customer marked the job done. Confirm cash receipt to complete the booking.
+          </p>
+          {confirm.error && (
+            <p className="mt-2 text-destructive">
+              {confirm.error instanceof ApiError ? confirm.error.message : 'Could not confirm'}
+            </p>
+          )}
+        </div>
+        <Button onClick={() => confirm.mutate()} disabled={confirm.isPending}>
+          {confirm.isPending ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              Confirming…
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="size-4" />
+              Confirm cash received
+            </>
+          )}
+        </Button>
+      </div>
+    )
+  }
+
+  return null
+}
+
 function CompletionCallout({ booking }: { booking: BookingDetail }) {
   const queryClient = useQueryClient()
   const complete = useMutation({
@@ -470,6 +578,9 @@ function CompletionCallout({ booking }: { booking: BookingDetail }) {
       })
     },
   })
+
+  // Customer-only: only the booking owner can mark a job complete.
+  if (booking.viewerRole !== 'CUSTOMER') return null
 
   if (booking.status === 'IN_PROGRESS') {
     return (

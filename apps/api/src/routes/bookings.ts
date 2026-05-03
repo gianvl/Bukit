@@ -100,12 +100,24 @@ const BookingDetailDto = BookingSummaryDto.extend({
       amountCentavos: z.int().nonnegative(),
     })
     .nullable(),
+  /** Which side is viewing — drives role-aware UI on the detail page. */
+  viewerRole: z.enum(['CUSTOMER', 'PROVIDER']),
   /**
-   * Counterparty contact info, shared once the booking is past acceptance.
-   * Both customer and provider can see each other's name + phone for direct
-   * coordination. Null before PROVIDER_ASSIGNED.
+   * Provider details — visible to the customer once a provider has been
+   * assigned. Null before PROVIDER_ASSIGNED or when no provider is assigned.
    */
   provider: z
+    .object({
+      name: z.string(),
+      phoneNumber: z.string().nullable(),
+    })
+    .nullable(),
+  /**
+   * Customer details — visible to the assigned provider once they accept.
+   * Null when the viewer is the customer (they know their own info) or
+   * before acceptance.
+   */
+  customer: z
     .object({
       name: z.string(),
       phoneNumber: z.string().nullable(),
@@ -719,6 +731,7 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
           serviceTier: { select: { id: true, slug: true, name: true } },
           events: { orderBy: { createdAt: 'asc' } },
           payment: { select: { status: true, amountCentavos: true } },
+          user: { select: { name: true, phoneNumber: true } },
           provider: {
             select: {
               user: { select: { name: true, phoneNumber: true } },
@@ -728,12 +741,25 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
       })
       if (!booking) throw app.httpErrors.notFound('Booking not found')
 
+      const viewerRole: 'CUSTOMER' | 'PROVIDER' =
+        booking.userId === session.user.id ? 'CUSTOMER' : 'PROVIDER'
       const sharesContact = SHARE_CONTACT_STATUSES.has(booking.status)
+
+      // Customer view: surface the provider's contact (their counterparty).
       const provider =
-        sharesContact && booking.provider?.user
+        viewerRole === 'CUSTOMER' && sharesContact && booking.provider?.user
           ? {
               name: booking.provider.user.name,
               phoneNumber: booking.provider.user.phoneNumber,
+            }
+          : null
+
+      // Provider view: surface the customer's contact (their counterparty).
+      const customer =
+        viewerRole === 'PROVIDER' && sharesContact
+          ? {
+              name: booking.user.name,
+              phoneNumber: booking.user.phoneNumber,
             }
           : null
 
@@ -754,7 +780,9 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
           createdAt: e.createdAt.toISOString(),
         })),
         payment: booking.payment,
+        viewerRole,
         provider,
+        customer,
       }
     },
   )

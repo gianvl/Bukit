@@ -441,33 +441,42 @@ function AssignedBookingRow({ booking }: { booking: AssignedBooking }) {
     | string
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
+    <Card className="relative transition-shadow hover:shadow-md">
+      {/* Whole-card link sits behind interactive elements. */}
+      <Link
+        to="/bookings/$id"
+        params={{ id: booking.id }}
+        aria-label={`Open ${booking.serviceTier.name} booking details`}
+        className="absolute inset-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      />
+      <CardHeader className="flex flex-row items-start justify-between gap-4 relative pointer-events-none">
         <div className="space-y-1">
-          <Link
-            to="/bookings/$id"
-            params={{ id: booking.id }}
-            className="text-base font-semibold tracking-tight hover:underline underline-offset-4"
-          >
+          <h3 className="text-base font-semibold tracking-tight">
             {booking.serviceTier.name}
-          </Link>
+          </h3>
           <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
             <CalendarClock className="size-3.5" />
             {formatScheduled(booking.scheduledAt)} · {formatDuration(booking.durationMinutes)}
           </p>
+          <div className="flex items-center gap-1.5 pt-1">
+            {booking.bookingMode === 'ON_DEMAND' && (
+              <Badge variant="outline" className="gap-1">
+                <Zap className="size-3" />
+                On-demand
+              </Badge>
+            )}
+            {booking.paymentMethod === 'CASH' && (
+              <Badge variant="outline" className="gap-1">
+                <Banknote className="size-3" />
+                Cash
+              </Badge>
+            )}
+          </div>
         </div>
-        <div className="text-right space-y-1">
-          <span className="block text-sm font-medium">{formatCentavos(booking.totalCentavos)}</span>
-          {booking.paymentMethod === 'CASH' && (
-            <Badge variant="outline" className="gap-1">
-              <Banknote className="size-3" />
-              Cash
-            </Badge>
-          )}
-        </div>
+        <span className="text-sm font-medium">{formatCentavos(booking.totalCentavos)}</span>
       </CardHeader>
       <CardContent className="flex items-center justify-between gap-3 text-sm flex-wrap">
-        <div className="space-y-1">
+        <div className="space-y-1 pointer-events-none">
           <span className="text-muted-foreground inline-flex items-center gap-2">
             <MapPin className="size-3.5" />
             {booking.addressLine1}, {booking.city}
@@ -475,7 +484,8 @@ function AssignedBookingRow({ booking }: { booking: AssignedBooking }) {
           {booking.customerPhoneNumber ? (
             <a
               href={`tel:${booking.customerPhoneNumber}`}
-              className="text-primary inline-flex items-center gap-2 hover:underline underline-offset-4"
+              onClick={(e) => e.stopPropagation()}
+              className="relative pointer-events-auto text-primary inline-flex items-center gap-2 hover:underline underline-offset-4"
             >
               <Phone className="size-3.5" />
               {booking.customerName} · {formatPhoneForDisplay(booking.customerPhoneNumber)}
@@ -488,7 +498,15 @@ function AssignedBookingRow({ booking }: { booking: AssignedBooking }) {
           )}
         </div>
         {status === 'PROVIDER_ASSIGNED' && (
-          <Button size="sm" onClick={() => start.mutate()} disabled={start.isPending}>
+          <Button
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              start.mutate()
+            }}
+            disabled={start.isPending}
+            className="relative"
+          >
             {start.isPending ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
@@ -508,7 +526,15 @@ function AssignedBookingRow({ booking }: { booking: AssignedBooking }) {
           </span>
         )}
         {status === 'PENDING_CASH_CONFIRM' && (
-          <Button size="sm" onClick={() => confirm.mutate()} disabled={confirm.isPending}>
+          <Button
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              confirm.mutate()
+            }}
+            disabled={confirm.isPending}
+            className="relative"
+          >
             {confirm.isPending ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
