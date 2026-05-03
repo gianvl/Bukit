@@ -3,6 +3,8 @@ import { createFileRoute, redirect } from '@tanstack/react-router'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowLeft, ArrowRight, Loader2, Phone, ShieldCheck, Sparkles } from 'lucide-react'
 import { phoneNumber as phoneAuth, getSession } from '@/lib/auth-client'
+import { api } from '@/lib/api'
+import type { Me } from '@/features/me/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -17,13 +19,18 @@ import { safeRedirect } from '@/lib/safe-redirect'
 
 interface AuthSearch {
   redirect?: string
+  /** Pre-fills the role on the onboarding step ("customer" → USER, "provider" → PROVIDER). */
+  as?: 'customer' | 'provider'
 }
 
 export const Route = createFileRoute('/signin')({
   component: SignInPage,
   validateSearch: (raw: Record<string, unknown>): AuthSearch => {
+    const out: AuthSearch = {}
     const r = safeRedirect(raw.redirect)
-    return r ? { redirect: r } : {}
+    if (r) out.redirect = r
+    if (raw.as === 'customer' || raw.as === 'provider') out.as = raw.as
+    return out
   },
   beforeLoad: async ({ search }) => {
     const { data } = await getSession()
@@ -36,7 +43,7 @@ export const Route = createFileRoute('/signin')({
 const RESEND_COOLDOWN_S = 60
 
 function SignInPage() {
-  const { redirect: redirectTo } = Route.useSearch()
+  const { redirect: redirectTo, as } = Route.useSearch()
   const [phoneInput, setPhoneInput] = useState('')
   const [normalizedPhone, setNormalizedPhone] = useState<string | null>(null)
   const [step, setStep] = useState<'phone' | 'code'>('phone')
@@ -102,10 +109,27 @@ function SignInPage() {
     setError(null)
     setIsPending(true)
     const { error } = await phoneAuth.verify({ phoneNumber: normalizedPhone, code: value })
-    setIsPending(false)
     if (error) {
+      setIsPending(false)
       setError(error.message ?? 'Invalid or expired code')
       setCode('')
+      return
+    }
+    // Branch: new accounts (or anyone whose onboardedAt is null) go through
+    // the onboarding flow; everyone else lands on their requested destination.
+    let me: Me | null = null
+    try {
+      me = await api.get<Me>('/me')
+    } catch {
+      // /me failed for some reason — fall through to default redirect.
+    }
+    setIsPending(false)
+    if (me && !me.onboardedAt) {
+      const params = new URLSearchParams()
+      if (as) params.set('as', as)
+      if (redirectTo) params.set('redirect', redirectTo)
+      const query = params.toString()
+      window.location.assign(`/onboarding${query ? `?${query}` : ''}`)
       return
     }
     window.location.assign(redirectTo ?? '/')
