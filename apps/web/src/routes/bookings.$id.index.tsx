@@ -25,6 +25,8 @@ import {
 import { ApiError } from '@/lib/api'
 import { BookingMap } from '@/components/booking-map'
 import { ChatLauncher } from '@/components/chat-launcher'
+import { RatingCard } from '@/components/rating-card'
+import { Star } from 'lucide-react'
 import { getSocket, type ProviderLocationPayload } from '@/lib/socket'
 import type { ProviderLocation } from '@/features/bookings/queries'
 import {
@@ -201,6 +203,13 @@ function BookingDetailPage() {
       {booking.customer && (
         <CounterpartyCard label="Customer" party={booking.customer} />
       )}
+
+      {booking.status === 'COMPLETED' && booking.viewerRole === 'CUSTOMER' && (
+        <RatingCard booking={booking} />
+      )}
+      {booking.status === 'COMPLETED' &&
+        booking.viewerRole === 'PROVIDER' &&
+        booking.myReview && <RatingCard booking={booking} readonly />}
 
       {chatPanelEligible(booking.status as BookingStatus) && (
         <ChatLauncher bookingId={booking.id} />
@@ -451,8 +460,15 @@ function CounterpartyCard({
   party,
 }: {
   label: string
-  party: { name: string; phoneNumber: string | null }
+  party: {
+    name: string
+    phoneNumber: string | null
+    ratingAvg?: number
+    ratingCount?: number
+  }
 }) {
+  const showRating =
+    typeof party.ratingAvg === 'number' && typeof party.ratingCount === 'number'
   return (
     <Card>
       <CardHeader>
@@ -463,6 +479,24 @@ function CounterpartyCard({
           </span>
           {party.name}
         </CardTitle>
+        {showRating && (
+          <div className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Star className="size-3.5 fill-amber-400 text-amber-400" />
+            {party.ratingCount! > 0 ? (
+              <>
+                <span className="font-medium text-foreground tabular-nums">
+                  {party.ratingAvg!.toFixed(1)}
+                </span>
+                <span>·</span>
+                <span>
+                  {party.ratingCount} review{party.ratingCount === 1 ? '' : 's'}
+                </span>
+              </>
+            ) : (
+              <span>No reviews yet</span>
+            )}
+          </div>
+        )}
       </CardHeader>
       <CardContent className="flex items-center justify-between gap-3">
         <span className="text-sm text-muted-foreground inline-flex items-center gap-2">

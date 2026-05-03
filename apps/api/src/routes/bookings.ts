@@ -110,6 +110,8 @@ const BookingDetailDto = BookingSummaryDto.extend({
     .object({
       name: z.string(),
       phoneNumber: z.string().nullable(),
+      ratingAvg: z.number(),
+      ratingCount: z.int().nonnegative(),
     })
     .nullable(),
   /**
@@ -123,6 +125,29 @@ const BookingDetailDto = BookingSummaryDto.extend({
       phoneNumber: z.string().nullable(),
     })
     .nullable(),
+  /**
+   * The customer's review of this booking, if they've submitted one.
+   * Surfaced to both viewers so the customer sees their own rating and the
+   * provider sees what they got.
+   */
+  myReview: z
+    .object({
+      rating: z.int().min(1).max(5),
+      comment: z.string().nullable(),
+      createdAt: z.iso.datetime(),
+    })
+    .nullable(),
+})
+
+const ReviewBody = z.object({
+  rating: z.int().min(1).max(5),
+  comment: z.string().max(1000).optional(),
+})
+
+const ReviewDto = z.object({
+  rating: z.int().min(1).max(5),
+  comment: z.string().nullable(),
+  createdAt: z.iso.datetime(),
 })
 
 const SHARE_CONTACT_STATUSES = new Set([
@@ -734,9 +759,12 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
           user: { select: { name: true, phoneNumber: true } },
           provider: {
             select: {
+              ratingAvg: true,
+              ratingCount: true,
               user: { select: { name: true, phoneNumber: true } },
             },
           },
+          review: { select: { rating: true, comment: true, createdAt: true } },
         },
       })
       if (!booking) throw app.httpErrors.notFound('Booking not found')
@@ -751,6 +779,8 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
           ? {
               name: booking.provider.user.name,
               phoneNumber: booking.provider.user.phoneNumber,
+              ratingAvg: booking.provider.ratingAvg,
+              ratingCount: booking.provider.ratingCount,
             }
           : null
 
@@ -783,6 +813,80 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
         viewerRole,
         provider,
         customer,
+        myReview: booking.review
+          ? {
+              rating: booking.review.rating,
+              comment: booking.review.comment,
+              createdAt: booking.review.createdAt.toISOString(),
+            }
+          : null,
+      }
+    },
+  )
+
+  /**
+   * Customer rates a completed booking. One-time per booking (DB unique on
+   * Review.bookingId), comment optional. Recomputes the assigned provider's
+   * ratingAvg/ratingCount in the same transaction so the dashboard updates
+   * immediately on next read.
+   */
+  app.post(
+    '/bookings/:id/review',
+    {
+      schema: {
+        params: z.object({ id: z.string().min(1) }),
+        body: ReviewBody,
+        response: { 201: ReviewDto },
+      },
+    },
+    async (req, reply) => {
+      const session = requireSession(req)
+      const booking = await prisma.booking.findFirst({
+        where: { id: req.params.id, userId: session.user.id },
+        select: { id: true, status: true, providerId: true },
+      })
+      if (!booking) throw app.httpErrors.notFound('Booking not found')
+      if (booking.status !== 'COMPLETED') {
+        throw app.httpErrors.badRequest('Booking must be completed to review')
+      }
+      if (!booking.providerId) {
+        throw app.httpErrors.badRequest('No provider to review on this booking')
+      }
+      const existing = await prisma.review.findUnique({
+        where: { bookingId: booking.id },
+        select: { id: true },
+      })
+      if (existing) throw app.httpErrors.conflict('Booking already reviewed')
+
+      const review = await prisma.$transaction(async (tx) => {
+        const created = await tx.review.create({
+          data: {
+            bookingId: booking.id,
+            userId: session.user.id,
+            rating: req.body.rating,
+            comment: req.body.comment ?? null,
+          },
+        })
+        const agg = await tx.review.aggregate({
+          where: { booking: { providerId: booking.providerId! } },
+          _avg: { rating: true },
+          _count: { _all: true },
+        })
+        await tx.providerProfile.update({
+          where: { id: booking.providerId! },
+          data: {
+            ratingAvg: agg._avg.rating ?? 0,
+            ratingCount: agg._count._all,
+          },
+        })
+        return created
+      })
+
+      reply.status(201)
+      return {
+        rating: review.rating,
+        comment: review.comment,
+        createdAt: review.createdAt.toISOString(),
       }
     },
   )

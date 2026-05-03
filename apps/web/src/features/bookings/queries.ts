@@ -51,10 +51,30 @@ export interface BookingDetail extends BookingSummary {
   payment: { status: PaymentStatus; amountCentavos: number } | null
   /** Which side is viewing — drives role-aware UI on the detail page. */
   viewerRole: 'CUSTOMER' | 'PROVIDER'
-  /** Provider contact — populated only when viewerRole=CUSTOMER and assigned. */
-  provider: { name: string; phoneNumber: string | null } | null
+  /** Provider contact + lifetime rating — populated only when viewerRole=CUSTOMER and assigned. */
+  provider: {
+    name: string
+    phoneNumber: string | null
+    ratingAvg: number
+    ratingCount: number
+  } | null
   /** Customer contact — populated only when viewerRole=PROVIDER and accepted. */
   customer: { name: string; phoneNumber: string | null } | null
+  /** Customer's review of this booking, if submitted. */
+  myReview: { rating: number; comment: string | null; createdAt: string } | null
+}
+
+export interface BookingReview {
+  rating: number
+  comment: string | null
+  createdAt: string
+}
+
+export function submitBookingReview(
+  bookingId: string,
+  input: { rating: number; comment?: string },
+) {
+  return api.post<BookingReview>(`/bookings/${bookingId}/review`, input)
 }
 
 export const bookingsListQueryOptions = queryOptions({
