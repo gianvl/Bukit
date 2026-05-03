@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { ApiError } from '@/lib/api'
 import { BookingMap } from '@/components/booking-map'
-import { ChatPanel } from '@/components/chat-panel'
+import { ChatLauncher } from '@/components/chat-launcher'
 import { getSocket, type ProviderLocationPayload } from '@/lib/socket'
 import type { ProviderLocation } from '@/features/bookings/queries'
 import {
@@ -56,7 +56,7 @@ interface DetailSearch {
   status?: 'success' | 'cancelled'
 }
 
-export const Route = createFileRoute('/bookings/$id')({
+export const Route = createFileRoute('/bookings/$id/')({
   component: BookingDetailPage,
   validateSearch: (raw: Record<string, unknown>): DetailSearch => {
     const status = raw.status
@@ -203,7 +203,7 @@ function BookingDetailPage() {
       )}
 
       {chatPanelEligible(booking.status as BookingStatus) && (
-        <ChatPanel bookingId={booking.id} />
+        <ChatLauncher bookingId={booking.id} />
       )}
 
       <BookingMapPanel booking={booking} />
