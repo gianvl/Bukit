@@ -5,6 +5,7 @@ import { motion } from 'framer-motion'
 import { CalendarClock, CheckCircle2, Loader2, MapPin, NotebookPen, XCircle } from 'lucide-react'
 import {
   cancelBooking,
+  customerCompleteBooking,
   getCancellationQuote,
   type CancellationQuote,
 } from '@/features/bookings/api'
@@ -117,6 +118,8 @@ function BookingDetailPage() {
           {booking.payment && <PaymentStatusBadge status={booking.payment.status} />}
         </div>
       </header>
+
+      <CompletionCallout booking={booking} />
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -263,6 +266,65 @@ function CancelBookingButton({ booking }: { booking: BookingDetail }) {
       </AlertDialogContent>
     </AlertDialog>
   )
+}
+
+function CompletionCallout({ booking }: { booking: BookingDetail }) {
+  const queryClient = useQueryClient()
+  const complete = useMutation({
+    mutationFn: () => customerCompleteBooking(booking.id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: bookingDetailQueryOptions(booking.id).queryKey,
+      })
+    },
+  })
+
+  if (booking.status === 'IN_PROGRESS') {
+    return (
+      <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 flex items-start gap-3">
+        <CheckCircle2 className="size-5 text-primary mt-0.5" />
+        <div className="flex-1 text-sm">
+          <p className="font-medium text-foreground">Service in progress</p>
+          <p className="text-muted-foreground">
+            When the provider is done, mark it complete to release payment.
+          </p>
+          {complete.error && (
+            <p className="mt-2 text-destructive">
+              {complete.error instanceof ApiError
+                ? complete.error.message
+                : 'Could not mark as done'}
+            </p>
+          )}
+        </div>
+        <Button onClick={() => complete.mutate()} disabled={complete.isPending}>
+          {complete.isPending ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              Marking…
+            </>
+          ) : (
+            'Mark as done'
+          )}
+        </Button>
+      </div>
+    )
+  }
+
+  if (booking.status === 'PENDING_CASH_CONFIRM') {
+    return (
+      <div className="rounded-lg border bg-muted/40 p-4 flex items-start gap-3">
+        <Loader2 className="size-5 text-muted-foreground mt-0.5 animate-spin" />
+        <div className="flex-1 text-sm">
+          <p className="font-medium text-foreground">Awaiting provider's cash confirmation</p>
+          <p className="text-muted-foreground">
+            We've notified your provider. The booking completes once they confirm receipt.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return null
 }
 
 function ReturnBanner({

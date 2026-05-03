@@ -5,14 +5,16 @@ import {
   acceptBooking,
   assignedBookingsQueryOptions,
   availableBookingsQueryOptions,
+  confirmCashReceived,
   providerProfileQueryOptions,
   setAvailabilityMode,
+  startBooking,
   type AssignedBooking,
   type AvailabilityMode,
   type ProviderProfile,
   type ProviderStatus,
 } from '@/features/providers/api'
-import { Power, Calendar, Zap } from 'lucide-react'
+import { Banknote, Calendar, CheckCircle2, Play, Power, Zap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -131,24 +133,7 @@ function ProviderDashboard() {
             <ul className="space-y-3">
               {bookings.map((b) => (
                 <li key={b.id}>
-                  <Link to="/bookings/$id" params={{ id: b.id }} className="block group">
-                    <Card className="transition-shadow group-hover:shadow-md">
-                      <CardHeader className="flex flex-row items-center justify-between gap-4">
-                        <div className="space-y-1">
-                          <CardTitle className="text-base">{b.serviceTier.name}</CardTitle>
-                          <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
-                            <CalendarClock className="size-3.5" />
-                            {formatScheduled(b.scheduledAt)} · {formatDuration(b.durationMinutes)}
-                          </p>
-                        </div>
-                        <span className="text-sm font-medium">{formatCentavos(b.totalCentavos)}</span>
-                      </CardHeader>
-                      <CardContent className="text-sm text-muted-foreground inline-flex items-center gap-2">
-                        <MapPin className="size-3.5" />
-                        {b.addressLine1}, {b.city} · for {b.customerName}
-                      </CardContent>
-                    </Card>
-                  </Link>
+                  <AssignedBookingRow booking={b} />
                 </li>
               ))}
             </ul>
@@ -263,6 +248,110 @@ function AvailabilityCard({ profile }: { profile: ProviderProfile }) {
           })}
         </div>
       </CardContent>
+    </Card>
+  )
+}
+
+function AssignedBookingRow({ booking }: { booking: AssignedBooking }) {
+  const queryClient = useQueryClient()
+  const start = useMutation({
+    mutationFn: () => startBooking(booking.id),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: assignedBookingsQueryOptions.queryKey }),
+  })
+  const confirm = useMutation({
+    mutationFn: () => confirmCashReceived(booking.id),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: assignedBookingsQueryOptions.queryKey }),
+  })
+
+  const status = booking.status as
+    | 'PROVIDER_ASSIGNED'
+    | 'IN_PROGRESS'
+    | 'PENDING_CASH_CONFIRM'
+    | 'COMPLETED'
+    | string
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div className="space-y-1">
+          <Link
+            to="/bookings/$id"
+            params={{ id: booking.id }}
+            className="text-base font-semibold tracking-tight hover:underline underline-offset-4"
+          >
+            {booking.serviceTier.name}
+          </Link>
+          <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
+            <CalendarClock className="size-3.5" />
+            {formatScheduled(booking.scheduledAt)} · {formatDuration(booking.durationMinutes)}
+          </p>
+        </div>
+        <div className="text-right space-y-1">
+          <span className="block text-sm font-medium">{formatCentavos(booking.totalCentavos)}</span>
+          {booking.paymentMethod === 'CASH' && (
+            <Badge variant="outline" className="gap-1">
+              <Banknote className="size-3" />
+              Cash
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="flex items-center justify-between gap-3 text-sm">
+        <span className="text-muted-foreground inline-flex items-center gap-2">
+          <MapPin className="size-3.5" />
+          {booking.addressLine1}, {booking.city} · for {booking.customerName}
+        </span>
+        {status === 'PROVIDER_ASSIGNED' && (
+          <Button size="sm" onClick={() => start.mutate()} disabled={start.isPending}>
+            {start.isPending ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Starting…
+              </>
+            ) : (
+              <>
+                <Play className="size-3.5" />
+                Start service
+              </>
+            )}
+          </Button>
+        )}
+        {status === 'IN_PROGRESS' && (
+          <span className="text-xs text-muted-foreground">
+            Awaiting customer to confirm
+          </span>
+        )}
+        {status === 'PENDING_CASH_CONFIRM' && (
+          <Button size="sm" onClick={() => confirm.mutate()} disabled={confirm.isPending}>
+            {confirm.isPending ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Confirming…
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="size-3.5" />
+                Confirm cash received
+              </>
+            )}
+          </Button>
+        )}
+        {status === 'COMPLETED' && (
+          <Badge variant="default" className="gap-1">
+            <CheckCircle2 className="size-3" />
+            Completed
+          </Badge>
+        )}
+      </CardContent>
+      {(start.error || confirm.error) && (
+        <CardContent className="pt-0 text-sm text-destructive">
+          {(start.error ?? confirm.error) instanceof ApiError
+            ? (start.error ?? confirm.error)?.message
+            : 'Something went wrong'}
+        </CardContent>
+      )}
     </Card>
   )
 }

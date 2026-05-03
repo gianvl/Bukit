@@ -83,3 +83,13 @@ export function applyAsProvider(input: ApplyProviderInput) {
 export function setAvailabilityMode(mode: AvailabilityMode) {
   return api.patch<ProviderProfile>('/providers/me/availability', { availabilityMode: mode })
 }
+
+/** Provider transitions PROVIDER_ASSIGNED → IN_PROGRESS. */
+export function startBooking(bookingId: string) {
+  return api.post<{ id: string; status: 'IN_PROGRESS' }>(`/bookings/${bookingId}/start`)
+}
+
+/** Provider confirms cash receipt for a PENDING_CASH_CONFIRM booking. */
+export function confirmCashReceived(bookingId: string) {
+  return api.post<{ id: string; status: 'COMPLETED' }>(`/bookings/${bookingId}/confirm-cash`)
+}

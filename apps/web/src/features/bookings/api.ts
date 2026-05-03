@@ -69,3 +69,10 @@ export interface CancelResult {
 export function cancelBooking(bookingId: string) {
   return api.post<CancelResult>(`/bookings/${bookingId}/cancel`)
 }
+
+/** Customer marks the service done. Online → COMPLETED. Cash → PENDING_CASH_CONFIRM. */
+export function customerCompleteBooking(bookingId: string) {
+  return api.post<{ id: string; status: 'COMPLETED' | 'PENDING_CASH_CONFIRM' }>(
+    `/bookings/${bookingId}/customer-complete`,
+  )
+}

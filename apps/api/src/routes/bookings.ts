@@ -420,8 +420,92 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
     },
   )
 
+  /**
+   * Customer marks the service as done.
+   *   ONLINE booking → COMPLETED + Payout(PENDING) created (we owe the provider)
+   *   CASH   booking → PENDING_CASH_CONFIRM (provider must confirm cash receipt)
+   */
   app.post(
-    '/bookings/:id/complete',
+    '/bookings/:id/customer-complete',
+    {
+      schema: {
+        params: z.object({ id: z.string().min(1) }),
+        response: { 200: z.object({ id: z.string(), status: BookingStatusEnum }) },
+      },
+    },
+    async (req) => {
+      const session = requireSession(req)
+      const booking = await prisma.booking.findFirst({
+        where: { id: req.params.id, userId: session.user.id },
+      })
+      if (!booking) throw app.httpErrors.notFound('Booking not found')
+      if (booking.status !== 'IN_PROGRESS') {
+        throw app.httpErrors.conflict(`Cannot complete a booking in status ${booking.status}`)
+      }
+
+      const now = new Date()
+
+      if (booking.paymentMethod === 'CASH') {
+        await prisma.$transaction([
+          prisma.booking.update({
+            where: { id: booking.id },
+            data: { status: 'PENDING_CASH_CONFIRM', customerCompletedAt: now },
+          }),
+          prisma.bookingEvent.create({
+            data: {
+              bookingId: booking.id,
+              type: 'CUSTOMER_CONFIRMED',
+              actorId: session.user.id,
+            },
+          }),
+        ])
+        return { id: booking.id, status: 'PENDING_CASH_CONFIRM' as const }
+      }
+
+      // ONLINE: complete and create the payout we owe the provider.
+      const ops: import('@prisma/client').Prisma.PrismaPromise<unknown>[] = [
+        prisma.booking.update({
+          where: { id: booking.id },
+          data: { status: 'COMPLETED', customerCompletedAt: now },
+        }),
+        prisma.bookingEvent.create({
+          data: {
+            bookingId: booking.id,
+            type: 'CUSTOMER_CONFIRMED',
+            actorId: session.user.id,
+          },
+        }),
+        prisma.bookingEvent.create({
+          data: { bookingId: booking.id, type: 'COMPLETED', actorId: session.user.id },
+        }),
+      ]
+      if (booking.providerId) {
+        ops.push(
+          prisma.payout.upsert({
+            where: { bookingId: booking.id },
+            create: {
+              bookingId: booking.id,
+              providerId: booking.providerId,
+              amountCentavos: booking.totalCentavos,
+              status: 'PENDING',
+            },
+            update: {},
+          }),
+        )
+      }
+      await prisma.$transaction(ops)
+      return { id: booking.id, status: 'COMPLETED' as const }
+    },
+  )
+
+  /**
+   * Provider confirms they received the cash payment.
+   * Only valid for CASH bookings already in PENDING_CASH_CONFIRM (customer marked done).
+   * Creates a Payout marked PAID immediately — the cash already changed hands,
+   * the row is just for the provider's earnings ledger.
+   */
+  app.post(
+    '/bookings/:id/confirm-cash',
     {
       schema: {
         params: z.object({ id: z.string().min(1) }),
@@ -431,16 +515,50 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
     async (req) => {
       const session = requireSession(req)
       const booking = await assertProviderForBooking(app, session.user.id, req.params.id)
-      if (booking.status !== 'IN_PROGRESS') {
-        throw app.httpErrors.conflict(`Cannot complete a booking in status ${booking.status}`)
+      const full = await prisma.booking.findUnique({ where: { id: booking.id } })
+      if (!full) throw app.httpErrors.notFound('Booking not found')
+      if (full.paymentMethod !== 'CASH') {
+        throw app.httpErrors.conflict('Cash confirmation only applies to cash bookings')
       }
-      await prisma.$transaction([
-        prisma.booking.update({ where: { id: booking.id }, data: { status: 'COMPLETED' } }),
-        prisma.bookingEvent.create({
-          data: { bookingId: booking.id, type: 'COMPLETED', actorId: session.user.id },
+      if (full.status !== 'PENDING_CASH_CONFIRM') {
+        throw app.httpErrors.conflict(`Cannot confirm cash in status ${full.status}`)
+      }
+
+      const now = new Date()
+      const ops: import('@prisma/client').Prisma.PrismaPromise<unknown>[] = [
+        prisma.booking.update({
+          where: { id: full.id },
+          data: { status: 'COMPLETED', providerCashConfirmedAt: now },
         }),
-      ])
-      return { id: booking.id, status: 'COMPLETED' as const }
+        prisma.bookingEvent.create({
+          data: {
+            bookingId: full.id,
+            type: 'PROVIDER_CASH_RECEIVED',
+            actorId: session.user.id,
+          },
+        }),
+        prisma.bookingEvent.create({
+          data: { bookingId: full.id, type: 'COMPLETED', actorId: session.user.id },
+        }),
+      ]
+      if (full.providerId) {
+        ops.push(
+          prisma.payout.upsert({
+            where: { bookingId: full.id },
+            create: {
+              bookingId: full.id,
+              providerId: full.providerId,
+              amountCentavos: full.totalCentavos,
+              status: 'PAID',
+              paidAt: now,
+              notes: 'Paid in cash directly to provider',
+            },
+            update: {},
+          }),
+        )
+      }
+      await prisma.$transaction(ops)
+      return { id: full.id, status: 'COMPLETED' as const }
     },
   )
 
