@@ -110,7 +110,7 @@ function Hero() {
               variants={heroChild}
               className="mt-12 grid grid-cols-3 max-w-sm border-t border-border/60 pt-6 gap-4"
             >
-              <Stat kpi="3" label="cities served" />
+              <Stat kpi="NCR" label="all of Metro Manila" />
               <Stat kpi="24h" label="KYC review" />
               <Stat kpi="₱500" label="from / cleaning" />
             </motion.dl>

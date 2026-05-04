@@ -155,9 +155,7 @@ function ProviderDashboard() {
           <div className="max-w-2xl">
             <PageEyebrow icon={Briefcase}>Provider dashboard</PageEyebrow>
             <div className="mt-6">
-              <PageTitle accent={profile.cities[0] ? `${profile.cities.join(', ')}.` : 'aboard.'}>
-                {profile.cities[0] ? 'Working in' : 'Welcome'}
-              </PageTitle>
+              <PageTitle accent="Metro Manila.">Working across</PageTitle>
             </div>
           </div>
           <Badge variant={meta.tone} className="self-start">

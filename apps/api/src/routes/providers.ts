@@ -192,12 +192,11 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
   /**
    * Bookings available for acceptance.
    *
-   * Two filters compose:
-   *   - SCHEDULED bookings: include if booking.city ∈ caller.cities (case-insensitive).
-   *     Available to providers in SCHEDULED_ONLY or FULL mode.
-   *   - ON_DEMAND bookings: include only if caller has a fresh location AND
-   *     mode = FULL AND booking is within ON_DEMAND_RADIUS_KM (5 km).
-   *     Distance check is post-query in JS so we don't need PostGIS.
+   * Metro Manila is treated as a single service area, so SCHEDULED bookings
+   * are matched to every provider in SCHEDULED_ONLY or FULL mode without a
+   * per-city filter. ON_DEMAND bookings still require a fresh location AND
+   * mode = FULL AND booking within ON_DEMAND_RADIUS_KM (5 km), since the
+   * "match the closest provider" promise depends on actual geography.
    *
    * OFFLINE → empty.
    */
@@ -215,7 +214,6 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
         select: {
           id: true,
           status: true,
-          cities: true,
           availabilityMode: true,
           currentLatitude: true,
           currentLongitude: true,
@@ -225,19 +223,12 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
       if (profile.status !== 'ACTIVE') return { bookings: [] }
       if (profile.availabilityMode === 'OFFLINE') return { bookings: [] }
 
-      const includesScheduled = profile.cities.length > 0
       const hasLocation =
         profile.currentLatitude != null && profile.currentLongitude != null
       const includesOnDemand =
         profile.availabilityMode === 'FULL' && hasLocation
 
-      const filters: Prisma.BookingWhereInput[] = []
-      if (includesScheduled) {
-        filters.push({
-          bookingMode: 'SCHEDULED',
-          city: { in: profile.cities, mode: 'insensitive' },
-        })
-      }
+      const filters: Prisma.BookingWhereInput[] = [{ bookingMode: 'SCHEDULED' }]
       if (includesOnDemand) {
         filters.push({
           bookingMode: 'ON_DEMAND',
@@ -245,7 +236,6 @@ export const providerRoutes: FastifyPluginAsyncZod = async (app) => {
           longitude: { not: null },
         })
       }
-      if (filters.length === 0) return { bookings: [] }
 
       const rows = await prisma.booking.findMany({
         where: {

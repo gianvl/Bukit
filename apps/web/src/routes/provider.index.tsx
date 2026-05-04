@@ -8,7 +8,6 @@ import {
 } from '@/features/providers/api'
 import { getSession, useSession } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ApiError } from '@/lib/api'
@@ -35,17 +34,12 @@ function ProviderApply() {
   const { data: profile } = useQuery(providerProfileQueryOptions)
 
   const [bio, setBio] = useState('')
-  const [citiesText, setCitiesText] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const apply = useMutation({
     mutationFn: () =>
       applyAsProvider({
         bio: bio.trim() || undefined,
-        cities: citiesText
-          .split(',')
-          .map((c) => c.trim())
-          .filter(Boolean),
       }),
     onSuccess: async () => {
       await Promise.all([
@@ -109,10 +103,10 @@ function ProviderApply() {
           <div className="rounded-2xl border bg-card/90 backdrop-blur-sm shadow-[0_30px_80px_-30px_rgba(15,23,42,0.25)] p-7 sm:p-8">
             <PageEyebrow icon={Briefcase}>Provider application</PageEyebrow>
             <h2 className="mt-3 font-display text-2xl tracking-tight">
-              Tell us where you work
+              Tell us about you
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              We'll review your application within 24 hours.
+              Bukit operates across all of Metro Manila. We'll review your application within 24 hours.
             </p>
             <form
               onSubmit={(e) => {
@@ -122,18 +116,6 @@ function ProviderApply() {
               }}
               className="mt-6 space-y-5"
             >
-              <div className="space-y-2">
-                <Label htmlFor="cities" className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                  Cities you serve
-                </Label>
-                <Input
-                  id="cities"
-                  placeholder="Taguig, Makati, Pasig"
-                  value={citiesText}
-                  onChange={(e) => setCitiesText(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">Comma-separated.</p>
-              </div>
               <div className="space-y-2">
                 <Label htmlFor="bio" className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
                   Short bio (optional)

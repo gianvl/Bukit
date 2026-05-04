@@ -159,7 +159,7 @@ function SignInPage() {
             One tap, no passwords. We'll text you a 6-digit code to verify it's really you.
           </p>
           <div className="mt-10 grid grid-cols-3 gap-6 max-w-sm border-t border-border/60 pt-6">
-            <Stat kpi="3" label="cities served" />
+            <Stat kpi="NCR" label="all of Metro Manila" />
             <Stat kpi="24h" label="KYC review" />
             <Stat kpi="₱500" label="from / cleaning" />
           </div>

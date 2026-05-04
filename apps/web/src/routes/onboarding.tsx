@@ -53,7 +53,6 @@ function OnboardingPage() {
   const [role, setRole] = useState<'USER' | 'PROVIDER'>(
     as === 'provider' ? 'PROVIDER' : 'USER',
   )
-  const [citiesText, setCitiesText] = useState('')
   const [bio, setBio] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -62,10 +61,6 @@ function OnboardingPage() {
       submitOnboarding({
         name: name.trim(),
         role,
-        cities:
-          role === 'PROVIDER'
-            ? citiesText.split(',').map((c) => c.trim()).filter(Boolean)
-            : undefined,
         bio: role === 'PROVIDER' && bio.trim() ? bio.trim() : undefined,
       }),
     onSuccess: async (me) => {
@@ -79,9 +74,7 @@ function OnboardingPage() {
     },
   })
 
-  const canSubmit =
-    name.trim().length > 0 &&
-    (role !== 'PROVIDER' || citiesText.split(',').some((c) => c.trim().length > 0))
+  const canSubmit = name.trim().length > 0
 
   return (
     <section className="relative min-h-[calc(100dvh-3.5rem)] overflow-hidden">
@@ -100,7 +93,7 @@ function OnboardingPage() {
             </p>
           </div>
           <PageStats className="mt-10">
-            <PageStat kpi="3" label="cities served" />
+            <PageStat kpi="NCR" label="all of Metro Manila" />
             <PageStat kpi="24h" label="provider review" />
             <PageStat kpi="₱500" label="from / cleaning" />
           </PageStats>
@@ -165,34 +158,22 @@ function OnboardingPage() {
               </div>
 
               {role === 'PROVIDER' && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="cities" className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                      Cities you serve
-                    </Label>
-                    <Input
-                      id="cities"
-                      placeholder="Taguig, Makati, Pasig"
-                      required
-                      value={citiesText}
-                      onChange={(e) => setCitiesText(e.target.value)}
-                    />
-                    <p className="text-xs text-muted-foreground">Comma-separated.</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bio" className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                      Short bio (optional)
-                    </Label>
-                    <Textarea
-                      id="bio"
-                      rows={3}
-                      maxLength={500}
-                      placeholder="5 years of professional residential cleaning."
-                      value={bio}
-                      onChange={(e) => setBio(e.target.value)}
-                    />
-                  </div>
-                </>
+                <div className="space-y-2">
+                  <Label htmlFor="bio" className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                    Short bio (optional)
+                  </Label>
+                  <Textarea
+                    id="bio"
+                    rows={3}
+                    maxLength={500}
+                    placeholder="5 years of professional residential cleaning."
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Bukit operates across all of Metro Manila — you'll see every booking in NCR.
+                  </p>
+                </div>
               )}
 
               {error && (

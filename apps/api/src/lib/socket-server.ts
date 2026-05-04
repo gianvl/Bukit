@@ -145,9 +145,17 @@ export async function emitBookingStatus(
   }
 }
 
-/** Normalize a city name to a stable Socket.IO room key. */
-export function areaRoom(city: string): string {
-  return `area:${city.trim().toLowerCase()}`
+/**
+ * Single Metro Manila room. We used to scope rooms per-city (and providers
+ * had to declare which cities they served), but the platform now treats
+ * Metro Manila as one service area, so every booking + every provider lands
+ * in the same area room.
+ *
+ * Signature still takes a city for callsite continuity / future expansion
+ * to other regions, but the value is ignored today.
+ */
+export function areaRoom(_city?: string): string {
+  return 'area:metro-manila'
 }
 
 /** Per-provider room. Provider auto-joins on connect; used to push events
@@ -323,14 +331,12 @@ async function joinProviderAreaRooms(socket: AppSocket) {
   const userId = socket.data.session.user.id
   const profile = await prisma.providerProfile.findUnique({
     where: { userId },
-    select: { cities: true },
+    select: { id: true },
   })
   if (!profile) return
-  // Personal room first (cheap, single join), then area rooms for matching.
+  // Personal room (per-provider events) + the single Metro Manila area room.
   await socket.join(providerRoom(userId))
-  for (const city of profile.cities) {
-    await socket.join(areaRoom(city))
-  }
+  await socket.join(areaRoom())
 }
 
 async function handleChatDelivered(
