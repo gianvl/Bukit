@@ -88,8 +88,8 @@ function Hero() {
               variants={heroChild}
               className="mt-7 max-w-md text-base sm:text-lg text-muted-foreground leading-relaxed"
             >
-              Book vetted home cleaners across Makati, BGC, and Ortigas. Flat rates set
-              upfront. Paid securely through HelixPay. No surprises, ever.
+              Book vetted home cleaners across Metro Manila. Flat rates set upfront.
+              Pay with GCash, Maya, or card. No surprises, ever.
             </motion.p>
 
             <motion.div variants={heroChild} className="mt-9 flex flex-wrap items-center gap-3">
@@ -187,7 +187,7 @@ function AvailabilityCard() {
       <div className="mt-4 flex items-end justify-between">
         <div>
           <p className="font-display text-5xl leading-none">12</p>
-          <p className="mt-1 text-sm text-muted-foreground">cleaners in BGC</p>
+          <p className="mt-1 text-sm text-muted-foreground">cleaners nearby</p>
         </div>
         <div className="flex -space-x-2">
           {cleaners.map((c) => (
@@ -248,8 +248,8 @@ function Marquee() {
     'House cleaning',
     'Vetted via NBI clearance',
     'Flat rates from ₱500',
-    'Paid through HelixPay',
-    'Makati · BGC · Ortigas',
+    'GCash · Maya · card',
+    'All of Metro Manila',
     '24-hour KYC',
     'No subscriptions',
   ]

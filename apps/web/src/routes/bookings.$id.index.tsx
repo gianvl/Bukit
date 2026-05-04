@@ -89,7 +89,7 @@ function BookingDetailPage() {
     error,
   } = useQuery({
     ...queryOpts,
-    // Poll while waiting for the HelixPay webhook to flip Payment off PENDING.
+    // Poll while waiting for the PayMongo webhook to flip Payment off PENDING.
     refetchInterval: (q) => {
       const b = q.state.data
       if (returnStatus !== 'success') return false

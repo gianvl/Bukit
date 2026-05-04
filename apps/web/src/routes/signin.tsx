@@ -339,7 +339,7 @@ function SignInPage() {
           </div>
 
           <p className="mt-6 text-center text-xs text-muted-foreground lg:hidden">
-            Trusted home services across Makati, BGC, Ortigas.
+            Trusted home services across all of Metro Manila.
           </p>
         </div>
       </div>

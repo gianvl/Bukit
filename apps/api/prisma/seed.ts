@@ -38,6 +38,11 @@ const TIERS = [
 ] as const
 
 async function main() {
+  // Surface the host so we never accidentally seed the wrong DB.
+  const url = process.env.DATABASE_URL ?? ''
+  const host = url.match(/@([^/]+)/)?.[1] ?? '<unknown>'
+  console.log(`Seeding against DB host: ${host}`)
+
   for (const tier of TIERS) {
     await prisma.serviceTier.upsert({
       where: { slug: tier.slug },
