@@ -77,8 +77,17 @@ enum ProviderAvailabilityMode {
 }
 
 enum PayoutStatus {
+  /** Created — awaiting cooldown OR ready for disbursement (eligibleAt vs now). */
   PENDING
+  /** Disbursed to the provider's payout method. */
   PAID
+  /** Reversed — the underlying booking was refunded after the payout was created. */
+  VOID
+}
+
+enum PayoutMethodType {
+  GCASH
+  BANK
 }
 
 // ─── Auth (Better-Auth managed) ───────────────────────────────────────────
@@ -164,6 +173,9 @@ model ProviderProfile {
   ratingAvg   Float          @default(0)
   ratingCount Int            @default(0)
 
+  /** Platform take in basis points. 500 = 5%. Per-provider override possible. */
+  takeRateBps Int            @default(500)
+
   // KYC
   govIdType     String?
   govIdNumber   String?
@@ -184,8 +196,9 @@ model ProviderProfile {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  bookings Booking[] @relation("BookingsByProvider")
-  payouts  Payout[]
+  bookings      Booking[]              @relation("BookingsByProvider")
+  payouts       Payout[]
+  payoutMethod  ProviderPayoutMethod?
 
   @@index([status])
   @@index([availabilityMode])
@@ -294,19 +307,56 @@ model Payment {
 }
 
 model Payout {
-  id             String          @id @default(cuid(2))
-  providerId     String
-  provider       ProviderProfile @relation(fields: [providerId], references: [id])
-  bookingId      String          @unique
-  booking        Booking         @relation(fields: [bookingId], references: [id])
-  amountCentavos Int
-  status         PayoutStatus    @default(PENDING)
-  createdAt      DateTime        @default(now())
-  paidAt         DateTime?
-  notes          String?
+  id            String          @id @default(cuid(2))
+  providerId    String
+  provider      ProviderProfile @relation(fields: [providerId], references: [id])
+  bookingId     String          @unique
+  booking       Booking         @relation(fields: [bookingId], references: [id])
+
+  // Money breakdown — snapshots taken at booking completion.
+  // grossCentavos is the booking total the customer paid (or paid in cash).
+  // feeCentavos is the platform's take (gross * takeRateBps / 10_000).
+  // netCentavos is what we owe the provider (signed):
+  //   - Online booking: positive, equal to gross - fee.
+  //   - Cash booking: negative, equal to -fee. Provider already collected
+  //     gross from the customer; we deduct our cut from their next online
+  //     payout.
+  grossCentavos Int
+  feeCentavos   Int
+  netCentavos   Int
+
+  status        PayoutStatus    @default(PENDING)
+  /** Available for disbursement at this time (typically createdAt + 24h cooldown). */
+  eligibleAt    DateTime
+  paidAt        DateTime?
+  /** Free-text reference (e.g. GCash transaction ID) admin sets on disbursement. */
+  referenceCode String?
+  notes         String?
+  createdAt     DateTime        @default(now())
 
   @@index([providerId, status])
-  @@index([status, createdAt])
+  @@index([status, eligibleAt])
+}
+
+/**
+ * Where to send a provider's earnings. Single method per provider for v1
+ * (1:1 via providerProfileId @unique); multi-method support comes later.
+ * Manual disbursement only today — when we wire PayMongo Disbursements,
+ * this is the source of truth for the destination.
+ */
+model ProviderPayoutMethod {
+  id                String           @id @default(cuid(2))
+  providerProfileId String           @unique
+  providerProfile   ProviderProfile  @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+  type              PayoutMethodType
+  /** Account holder's full name as it appears on the account. */
+  holderName        String
+  /** GCash mobile number (E.164) or bank account number. */
+  accountIdentifier String
+  /** PH bank code (e.g. BDO, BPI). Null for GCash. */
+  bankCode          String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 }
 
 model Message {

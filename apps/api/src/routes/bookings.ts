@@ -6,6 +6,7 @@ import { quoteCancellation } from '../lib/cancellation-policy.js'
 import { refundPayment } from '../lib/paymongo.js'
 import { haversineKm } from '../lib/distance.js'
 import { areaRoom, emitBookingStatus, getIo } from '../lib/socket-server.js'
+import { eligibleAtFrom, splitPayout } from '../lib/payouts.js'
 
 const BookingStatusEnum = z.enum([
   'PENDING_PAYMENT',
@@ -428,11 +429,19 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
       const session = requireSession(req)
       const profile = await prisma.providerProfile.findUnique({
         where: { userId: session.user.id },
-        select: { id: true, status: true },
+        select: { id: true, status: true, payoutMethod: { select: { id: true } } },
       })
       if (!profile) throw app.httpErrors.forbidden('Not a provider')
       if (profile.status !== 'ACTIVE') {
         throw app.httpErrors.forbidden('Provider is not active')
+      }
+      // Hard gate: providers must link a payout destination before claiming
+      // a job. Front-end mirrors this with a banner + disabled buttons; we
+      // still enforce server-side in case they bypass the UI.
+      if (!profile.payoutMethod) {
+        throw app.httpErrors.unprocessableEntity(
+          'Add a payout method before accepting bookings',
+        )
       }
 
       const result = await prisma.booking.updateMany({
@@ -564,14 +573,26 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
         }),
       ]
       if (booking.providerId) {
+        const profile = await prisma.providerProfile.findUnique({
+          where: { id: booking.providerId },
+          select: { takeRateBps: true },
+        })
+        const split = splitPayout(
+          booking.totalCentavos,
+          profile?.takeRateBps ?? 500,
+          'ONLINE',
+        )
         ops.push(
           prisma.payout.upsert({
             where: { bookingId: booking.id },
             create: {
               bookingId: booking.id,
               providerId: booking.providerId,
-              amountCentavos: booking.totalCentavos,
+              grossCentavos: split.grossCentavos,
+              feeCentavos: split.feeCentavos,
+              netCentavos: split.netCentavos,
               status: 'PENDING',
+              eligibleAt: eligibleAtFrom(now),
             },
             update: {},
           }),
@@ -627,16 +648,31 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
         }),
       ]
       if (full.providerId) {
+        const profile = await prisma.providerProfile.findUnique({
+          where: { id: full.providerId },
+          select: { takeRateBps: true },
+        })
+        // Cash booking: provider already collected `gross` from the customer.
+        // We are owed `fee` — recorded as a negative-net Payout that nets out
+        // of their next online disbursement. Status is PENDING (not PAID),
+        // since this is an unsettled debit, not a completed transfer.
+        const split = splitPayout(
+          full.totalCentavos,
+          profile?.takeRateBps ?? 500,
+          'CASH',
+        )
         ops.push(
           prisma.payout.upsert({
             where: { bookingId: full.id },
             create: {
               bookingId: full.id,
               providerId: full.providerId,
-              amountCentavos: full.totalCentavos,
-              status: 'PAID',
-              paidAt: now,
-              notes: 'Paid in cash directly to provider',
+              grossCentavos: split.grossCentavos,
+              feeCentavos: split.feeCentavos,
+              netCentavos: split.netCentavos,
+              status: 'PENDING',
+              eligibleAt: now,
+              notes: 'Cash collected by provider; platform fee owed',
             },
             update: {},
           }),

@@ -31,6 +31,8 @@ import { cn } from '@/lib/utils'
 import { useShareLocation, type ShareLocationStatus } from '@/features/providers/use-share-location'
 import { getSocket } from '@/lib/socket'
 import { PageEyebrow, PageHero, PageStat, PageStats, PageTitle } from '@/components/page-shell'
+import { earningsQueryOptions } from '@/features/earnings/api'
+import { Wallet } from 'lucide-react'
 import { showStatusToast } from '@/features/bookings/status-toasts'
 import { meQueryOptions } from '@/features/me/api'
 import { PaginationBar, usePagination } from '@/components/pagination-bar'
@@ -81,6 +83,8 @@ function ProviderDashboard() {
   const { data: profile, isPending: profilePending } = useQuery(providerProfileQueryOptions)
   const { data: bookings, isPending: bookingsPending } = useQuery(assignedBookingsQueryOptions)
   const { data: available } = useQuery(availableBookingsQueryOptions)
+  const { data: earnings } = useQuery(earningsQueryOptions)
+  const payoutMethodLinked = !!earnings?.payoutMethod
 
   // Subscribe to live booking notifications. Server auto-joins us into our city's
   // area room on connect; we just react to events.
@@ -172,6 +176,8 @@ function ProviderDashboard() {
       </PageHero>
 
       <section className="mx-auto max-w-5xl px-6 py-10 space-y-6">
+      {profile.status === 'ACTIVE' && !payoutMethodLinked && <PayoutGateBanner />}
+
       {profile.status === 'ACTIVE' && <AvailabilityCard profile={profile} />}
 
       {profile.status === 'PENDING_KYC' && (
@@ -199,7 +205,7 @@ function ProviderDashboard() {
               <ul className="space-y-3">
                 {available.map((b) => (
                   <li key={b.id}>
-                    <AvailableBookingRow booking={b} />
+                    <AvailableBookingRow booking={b} payoutMethodLinked={payoutMethodLinked} />
                   </li>
                 ))}
               </ul>
@@ -639,7 +645,13 @@ function AssignedBookingRow({ booking }: { booking: AssignedBooking }) {
   )
 }
 
-function AvailableBookingRow({ booking }: { booking: AssignedBooking }) {
+function AvailableBookingRow({
+  booking,
+  payoutMethodLinked,
+}: {
+  booking: AssignedBooking
+  payoutMethodLinked: boolean
+}) {
   const queryClient = useQueryClient()
   const accept = useMutation({
     mutationFn: () => acceptBooking(booking.id),
@@ -671,16 +683,25 @@ function AvailableBookingRow({ booking }: { booking: AssignedBooking }) {
           <MapPin className="size-3.5" />
           {booking.addressLine1}, {booking.city}
         </span>
-        <Button size="sm" onClick={() => accept.mutate()} disabled={accept.isPending}>
-          {accept.isPending ? (
-            <>
-              <Loader2 className="size-4 animate-spin" />
-              Accepting…
-            </>
-          ) : (
-            'Accept'
-          )}
-        </Button>
+        {payoutMethodLinked ? (
+          <Button size="sm" onClick={() => accept.mutate()} disabled={accept.isPending}>
+            {accept.isPending ? (
+              <>
+                <Loader2 className="size-4 animate-spin" />
+                Accepting…
+              </>
+            ) : (
+              'Accept'
+            )}
+          </Button>
+        ) : (
+          <Button asChild size="sm" variant="outline">
+            <Link to="/provider/earnings">
+              <Wallet className="size-4" />
+              Add payout
+            </Link>
+          </Button>
+        )}
       </CardContent>
       {errorMessage && (
         <CardContent className="pt-0 text-sm text-destructive" role="alert">
@@ -732,4 +753,32 @@ function formatScheduled(iso: string): string {
     hour: 'numeric',
     minute: '2-digit',
   })
+}
+
+/**
+ * Hard gate: providers can browse the available list but the Accept button
+ * is replaced with a deep link until they add a payout destination. The
+ * server enforces the same rule on POST /bookings/:id/accept.
+ */
+function PayoutGateBanner() {
+  return (
+    <Card className="border-primary/40 bg-primary/5">
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div className="space-y-1">
+          <CardTitle className="text-base inline-flex items-center gap-2">
+            <Wallet className="size-4 text-primary" />
+            Add a payout method to start accepting
+          </CardTitle>
+          <CardDescription>
+            We need to know where to send your earnings before you can claim a job.
+          </CardDescription>
+        </div>
+        <Button asChild size="sm" className="rounded-full">
+          <Link to="/provider/earnings">
+            Add payout method
+          </Link>
+        </Button>
+      </CardHeader>
+    </Card>
+  )
 }

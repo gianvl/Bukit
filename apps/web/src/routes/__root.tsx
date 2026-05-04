@@ -84,9 +84,14 @@ function RootLayoutShell({ children }: { children: ReactNode }) {
             {signedIn && (
               <>
                 {isProvider && (
-                  <Button asChild variant="ghost" size="sm">
-                    <Link to="/provider/dashboard">Dashboard</Link>
-                  </Button>
+                  <>
+                    <Button asChild variant="ghost" size="sm">
+                      <Link to="/provider/dashboard">Dashboard</Link>
+                    </Button>
+                    <Button asChild variant="ghost" size="sm">
+                      <Link to="/provider/earnings">Earnings</Link>
+                    </Button>
+                  </>
                 )}
                 <Button asChild variant="ghost" size="sm">
                   <Link to="/bookings">My bookings</Link>
@@ -139,12 +144,20 @@ function RootLayoutShell({ children }: { children: ReactNode }) {
                 {signedIn && (
                   <>
                     {isProvider && (
-                      <MobileLink
-                        to="/provider/dashboard"
-                        onSelect={() => setMobileOpen(false)}
-                      >
-                        Provider dashboard
-                      </MobileLink>
+                      <>
+                        <MobileLink
+                          to="/provider/dashboard"
+                          onSelect={() => setMobileOpen(false)}
+                        >
+                          Provider dashboard
+                        </MobileLink>
+                        <MobileLink
+                          to="/provider/earnings"
+                          onSelect={() => setMobileOpen(false)}
+                        >
+                          Earnings
+                        </MobileLink>
+                      </>
                     )}
                     <MobileLink to="/bookings" onSelect={() => setMobileOpen(false)}>
                       My bookings
@@ -189,7 +202,7 @@ function MobileLink({
   children,
   onSelect,
 }: {
-  to: '/services' | '/bookings' | '/provider/dashboard'
+  to: '/services' | '/bookings' | '/provider/dashboard' | '/provider/earnings'
   children: ReactNode
   onSelect: () => void
 }) {
