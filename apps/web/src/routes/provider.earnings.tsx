@@ -371,9 +371,28 @@ function RequestPayoutCard({ earnings }: { earnings: Earnings }) {
           <div className="text-xs text-muted-foreground uppercase tracking-wider">
             Available now
           </div>
+          {/* Clamp the headline at zero — a negative balance happens when
+              cash-fee debits outweigh eligible earnings, which would look
+              broken as the primary KPI. The breakdown lines below explain
+              the full state. */}
           <div className="font-display text-3xl tabular-nums tracking-tight mt-1">
-            {formatCentavos(earnings.availableCentavos)}
+            {formatCentavos(Math.max(0, earnings.availableCentavos))}
           </div>
+          {/* Cooldown breakdown — surface the just-completed online jobs
+              so the provider sees their earnings registered, even if
+              they're not yet eligible for cash-out. */}
+          {earnings.pendingCentavos - earnings.availableCentavos > 0 && (
+            <div className="mt-1 text-xs text-muted-foreground">
+              +{formatCentavos(earnings.pendingCentavos - earnings.availableCentavos)}{' '}
+              unlocking after the 24h cooldown
+            </div>
+          )}
+          {earnings.cashOwedCentavos > 0 && (
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              −{formatCentavos(earnings.cashOwedCentavos)} cash fees will deduct
+              from your next payout
+            </div>
+          )}
           {feedback && (
             <p
               className={cn(
