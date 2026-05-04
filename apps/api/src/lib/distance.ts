@@ -22,5 +22,9 @@ export function haversineKm(
   return R * c
 }
 
-/** Maximum kilometers between provider and customer for an on-demand match. */
-export const ON_DEMAND_RADIUS_KM = 5
+/**
+ * Maximum kilometers between provider and customer for an on-demand match.
+ * 35 km comfortably covers all of Metro Manila (Caloocan ↔ Las Piñas
+ * diagonal is ≈ 30 km) without bleeding far into Cavite/Bulacan.
+ */
+export const ON_DEMAND_RADIUS_KM = 35

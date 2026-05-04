@@ -38,7 +38,10 @@ describe('haversineKm', () => {
     expect(km).toBeLessThan(20_100)
   })
 
-  it('exposes a sensible on-demand radius default', () => {
-    expect(ON_DEMAND_RADIUS_KM).toBe(5)
+  it('on-demand radius covers the Metro Manila diagonal', () => {
+    // Caloocan (north tip) ↔ Las Piñas (south tip) is ≈ 30 km. The radius
+    // must clear that comfortably but not bleed deep into Cavite/Bulacan.
+    expect(ON_DEMAND_RADIUS_KM).toBeGreaterThanOrEqual(30)
+    expect(ON_DEMAND_RADIUS_KM).toBeLessThanOrEqual(50)
   })
 })

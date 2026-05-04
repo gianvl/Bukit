@@ -427,6 +427,11 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
     },
     async (req) => {
       const session = requireSession(req)
+
+      // Pre-flight checks. We do these outside the transaction so we fail
+      // fast with clean error messages — but every check is also enforced
+      // by the predicates inside the transaction so a slow first call
+      // can't sneak past a state change between read and write.
       const profile = await prisma.providerProfile.findUnique({
         where: { userId: session.user.id },
         select: { id: true, status: true, payoutMethod: { select: { id: true } } },
@@ -435,45 +440,67 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
       if (profile.status !== 'ACTIVE') {
         throw app.httpErrors.forbidden('Provider is not active')
       }
-      // Hard gate: providers must link a payout destination before claiming
-      // a job. Front-end mirrors this with a banner + disabled buttons; we
-      // still enforce server-side in case they bypass the UI.
       if (!profile.payoutMethod) {
         throw app.httpErrors.unprocessableEntity(
           'Add a payout method before accepting bookings',
         )
       }
 
-      const result = await prisma.booking.updateMany({
-        where: {
-          id: req.params.id,
-          status: { in: ['CONFIRMED', 'IN_ESCROW'] },
-          providerId: null,
-        },
-        data: { status: 'PROVIDER_ASSIGNED', providerId: profile.id },
-      })
-      if (result.count === 0) {
-        throw app.httpErrors.conflict('Booking is no longer available')
-      }
+      // Race-safe claim: updateMany acts as compare-and-swap because the
+      // `providerId: null` predicate fails the moment another caller wins,
+      // so concurrent accept calls collapse into exactly one winner. Wrap
+      // the status flip and the audit event in a transaction so we can
+      // never end up with an assigned booking that has no PROVIDER_ASSIGNED
+      // event (or vice-versa).
+      const taken = await prisma.$transaction(async (tx) => {
+        // Re-verify the payout method inside the transaction window —
+        // closes the gap where a provider unlinks their method between the
+        // pre-flight read and the write.
+        const stillEligible = await tx.providerProfile.findFirst({
+          where: { id: profile.id, status: 'ACTIVE', payoutMethod: { isNot: null } },
+          select: { id: true },
+        })
+        if (!stillEligible) {
+          throw app.httpErrors.unprocessableEntity(
+            'Provider is no longer eligible to accept bookings',
+          )
+        }
 
-      await prisma.bookingEvent.create({
-        data: {
-          bookingId: req.params.id,
-          type: 'PROVIDER_ASSIGNED',
-          actorId: session.user.id,
-          payload: { providerId: profile.id },
-        },
+        const result = await tx.booking.updateMany({
+          where: {
+            id: req.params.id,
+            status: { in: ['CONFIRMED', 'IN_ESCROW'] },
+            providerId: null,
+          },
+          data: { status: 'PROVIDER_ASSIGNED', providerId: profile.id },
+        })
+        if (result.count === 0) {
+          throw app.httpErrors.conflict('Booking is no longer available')
+        }
+
+        await tx.bookingEvent.create({
+          data: {
+            bookingId: req.params.id,
+            type: 'PROVIDER_ASSIGNED',
+            actorId: session.user.id,
+            payload: { providerId: profile.id },
+          },
+        })
+
+        return tx.booking.findUnique({
+          where: { id: req.params.id },
+          select: { city: true },
+        })
       })
 
-      // Tell other providers in the city that this booking is gone so their lists update instantly.
-      const taken = await prisma.booking.findUnique({
-        where: { id: req.params.id },
-        select: { city: true },
-      })
+      // Broadcasts happen outside the transaction so a slow socket emit
+      // never blocks the DB write. Other providers' dashboards drop the
+      // booking from their list as soon as `booking:taken` arrives.
       if (taken) {
-        getIo().to(areaRoom(taken.city)).emit('booking:taken', { bookingId: req.params.id })
+        getIo()
+          .to(areaRoom(taken.city))
+          .emit('booking:taken', { bookingId: req.params.id })
       }
-      // Push to anyone watching this booking's room (the customer's detail page).
       emitBookingStatus(req.params.id, session.user.id)
 
       return {

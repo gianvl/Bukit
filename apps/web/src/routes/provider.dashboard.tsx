@@ -655,7 +655,33 @@ function AvailableBookingRow({
   const queryClient = useQueryClient()
   const accept = useMutation({
     mutationFn: () => acceptBooking(booking.id),
-    onSuccess: async () => {
+    // Optimistically remove the row from the available list the moment we
+    // click. Two safeguards on top of the server's race-safe updateMany:
+    //   1) prevents the UI from flashing duplicate "Accept" buttons if the
+    //      socket event lags;
+    //   2) the row disappears, so a fast double-tap can't fire a second
+    //      request — the second click hits an empty list.
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: availableBookingsQueryOptions.queryKey })
+      const previous = queryClient.getQueryData<{ bookings: AssignedBooking[] }>(
+        availableBookingsQueryOptions.queryKey,
+      )
+      queryClient.setQueryData<{ bookings: AssignedBooking[] }>(
+        availableBookingsQueryOptions.queryKey,
+        (prev) =>
+          prev ? { bookings: prev.bookings.filter((b) => b.id !== booking.id) } : prev,
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, ctx) => {
+      // Roll back: someone else may have legitimately taken it, but if the
+      // failure was anything else (network blip, validation), the row
+      // should reappear so the user can decide.
+      if (ctx?.previous) {
+        queryClient.setQueryData(availableBookingsQueryOptions.queryKey, ctx.previous)
+      }
+    },
+    onSettled: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: availableBookingsQueryOptions.queryKey }),
         queryClient.invalidateQueries({ queryKey: assignedBookingsQueryOptions.queryKey }),
