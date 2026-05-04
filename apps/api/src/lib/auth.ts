@@ -36,6 +36,16 @@ export const auth = betterAuth({
   advanced: {
     cookiePrefix: 'bukit',
     crossSubDomainCookies: { enabled: false },
+    // In prod the web app (Vercel) and the API (Railway) live on
+    // different apex domains, so the session cookie is "third-party"
+    // from the browser's POV. SameSite=None+Secure (with Partitioned
+    // for Chrome's CHIPS) is the only way the browser will send it
+    // back on cross-site requests. Local dev keeps the Lax default.
+    defaultCookieAttributes:
+      env.NODE_ENV === 'production'
+        ? { sameSite: 'none', secure: true, partitioned: true }
+        : undefined,
+    useSecureCookies: env.NODE_ENV === 'production',
   },
   plugins: [
     phoneNumber({
