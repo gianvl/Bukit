@@ -31,7 +31,7 @@ export const meQueryOptions = queryOptions({
       throw err
     }
   },
-  staleTime: 30_000,
+  staleTime: 60_000,
 })
 
 export interface OnboardingInput {
@@ -70,7 +70,7 @@ export interface MeStats {
 export const meStatsQueryOptions = queryOptions({
   queryKey: ['me', 'stats'] as const,
   queryFn: () => api.get<MeStats>('/me/stats'),
-  staleTime: 30_000,
+  staleTime: 60_000,
 })
 
 export interface MyReview {
@@ -92,5 +92,5 @@ export interface MyReviewsResponse {
 export const myReviewsQueryOptions = queryOptions({
   queryKey: ['me', 'reviews'] as const,
   queryFn: () => api.get<MyReviewsResponse>('/me/reviews'),
-  staleTime: 30_000,
+  staleTime: 60_000,
 })
