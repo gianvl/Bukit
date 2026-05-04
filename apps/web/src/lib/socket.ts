@@ -1,6 +1,15 @@
 import { io, type Socket } from 'socket.io-client'
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+// Socket.IO requires an absolute origin — Vercel rewrites don't proxy
+// WebSockets reliably, so even when VITE_API_URL is a same-origin prefix
+// like "/api" (used to make auth cookies first-party), the socket still
+// connects directly to the API host. Set VITE_SOCKET_URL in production to
+// the Railway URL; in dev it falls back to VITE_API_URL.
+const RAW_API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL ??
+  (RAW_API_URL.startsWith('/') ? window.location.origin : RAW_API_URL)
+const API_URL = SOCKET_URL
 
 /* ─── Mirror of apps/api/src/lib/socket-server.ts event types ────────── */
 
