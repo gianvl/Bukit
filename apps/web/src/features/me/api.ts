@@ -72,3 +72,25 @@ export const meStatsQueryOptions = queryOptions({
   queryFn: () => api.get<MeStats>('/me/stats'),
   staleTime: 30_000,
 })
+
+export interface MyReview {
+  id: string
+  bookingId: string
+  rating: number
+  comment: string | null
+  createdAt: string
+  customerName: string
+  serviceTierName: string
+}
+
+export interface MyReviewsResponse {
+  ratingAvg: number
+  ratingCount: number
+  reviews: MyReview[]
+}
+
+export const myReviewsQueryOptions = queryOptions({
+  queryKey: ['me', 'reviews'] as const,
+  queryFn: () => api.get<MyReviewsResponse>('/me/reviews'),
+  staleTime: 30_000,
+})

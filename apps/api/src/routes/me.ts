@@ -32,6 +32,23 @@ const MeStatsDto = z.object({
   provider: ProviderStatsDto.nullable(),
 });
 
+/** A single review left for the caller (provider). */
+const MyReviewDto = z.object({
+  id: z.string(),
+  bookingId: z.string(),
+  rating: z.int().min(1).max(5),
+  comment: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  customerName: z.string(),
+  serviceTierName: z.string(),
+});
+
+const MyReviewsDto = z.object({
+  ratingAvg: z.number(),
+  ratingCount: z.int().nonnegative(),
+  reviews: z.array(MyReviewDto),
+});
+
 const MeDto = z.object({
   id: z.string(),
   name: z.string(),
@@ -236,4 +253,53 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
       return { customer, provider };
     }
   );
+
+  /**
+   * Recent reviews left for the caller (a provider). Surfaces both the
+   * lifetime aggregates (so the UI doesn't need a second fetch) and a
+   * capped list of the most recent feedback.
+   */
+  app.get(
+    '/me/reviews',
+    {
+      schema: { response: { 200: MyReviewsDto } },
+    },
+    async (req) => {
+      const session = requireSession(req)
+      const profile = await prisma.providerProfile.findUnique({
+        where: { userId: session.user.id },
+        select: { id: true, ratingAvg: true, ratingCount: true },
+      })
+      if (!profile) throw app.httpErrors.forbidden('Not a provider')
+
+      const reviews = await prisma.review.findMany({
+        where: { booking: { providerId: profile.id } },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+        select: {
+          id: true,
+          bookingId: true,
+          rating: true,
+          comment: true,
+          createdAt: true,
+          user: { select: { name: true } },
+          booking: { select: { serviceTier: { select: { name: true } } } },
+        },
+      })
+
+      return {
+        ratingAvg: profile.ratingAvg,
+        ratingCount: profile.ratingCount,
+        reviews: reviews.map((r) => ({
+          id: r.id,
+          bookingId: r.bookingId,
+          rating: r.rating,
+          comment: r.comment,
+          createdAt: r.createdAt.toISOString(),
+          customerName: r.user.name,
+          serviceTierName: r.booking.serviceTier.name,
+        })),
+      }
+    },
+  )
 };

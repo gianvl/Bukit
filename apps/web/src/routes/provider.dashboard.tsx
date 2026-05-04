@@ -33,6 +33,7 @@ import { getSocket } from '@/lib/socket'
 import { PageEyebrow, PageHero, PageStat, PageStats, PageTitle } from '@/components/page-shell'
 import { earningsQueryOptions } from '@/features/earnings/api'
 import { Wallet } from 'lucide-react'
+import { ProviderReviewsCard } from '@/components/provider-reviews-card'
 import { showStatusToast } from '@/features/bookings/status-toasts'
 import { meQueryOptions } from '@/features/me/api'
 import { PaginationBar, usePagination } from '@/components/pagination-bar'
@@ -443,6 +444,8 @@ function AssignedBookingsSection({
         bookings={active}
         pending={bookingsPending}
       />
+
+      <ProviderReviewsCard />
 
       {past.length > 0 && (
         <AssignedJobsCard
