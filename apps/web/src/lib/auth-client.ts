@@ -2,11 +2,15 @@ import { createAuthClient } from 'better-auth/react'
 import { inferAdditionalFields, phoneNumberClient } from 'better-auth/client/plugins'
 
 const RAW_API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001'
-// If VITE_API_URL is a same-origin path prefix (e.g. "/api"), resolve it
-// against the current origin so Better-Auth has an absolute baseURL.
-// In dev / direct-Railway mode it's already absolute and passes through.
+// Better-Auth treats baseURL as the AUTH root and appends action names
+// directly when baseURL contains a path. To keep its default routing
+// (/api/auth/{action}) consistent across modes, we always pass it just
+// the origin and let it add the /api/auth prefix itself:
+//   - dev:  baseURL = "http://localhost:3001" → calls /api/auth/get-session
+//   - prod (proxied via Vercel rewrites): baseURL = window.location.origin
+//     → calls /api/auth/get-session, which the rewrite forwards verbatim.
 const API_URL = RAW_API_URL.startsWith('/')
-  ? `${window.location.origin}${RAW_API_URL.replace(/\/$/, '')}`
+  ? window.location.origin
   : RAW_API_URL
 
 export const authClient = createAuthClient({

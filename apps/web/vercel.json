@@ -6,6 +6,10 @@
   "installCommand": "pnpm install --frozen-lockfile",
   "rewrites": [
     {
+      "source": "/api/auth/:path*",
+      "destination": "https://bukit-production-2a44.up.railway.app/api/auth/:path*"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://bukit-production-2a44.up.railway.app/:path*"
     },
