@@ -1,0 +1,15 @@
+# Repo-wide ignore. Railway builds from the repo root with the api
+# Dockerfile, so this slims the build context dramatically.
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/*.log
+**/coverage
+**/.vitest
+.git
+.github
+.vscode
+.idea
+**/.DS_Store
+README*.md

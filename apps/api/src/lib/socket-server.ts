@@ -194,7 +194,7 @@ export function getIo(): AppServer {
 export function setupSocketServer(app: FastifyInstance): AppServer {
   const io: AppServer = new SocketIOServer(app.server, {
     cors: {
-      origin: env.WEB_ORIGIN,
+      origin: env.WEB_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean),
       credentials: true,
     },
   })

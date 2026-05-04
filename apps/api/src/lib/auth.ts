@@ -6,11 +6,17 @@ import { env } from '../env.js'
 import { sendSms } from './philsms.js'
 import { normalizePHMobile } from './phone.js'
 
+// Allow a comma-separated WEB_ORIGIN so production can list both the
+// canonical Vercel URL and a custom domain without redeploying.
+const trustedOrigins = env.WEB_ORIGIN.split(',')
+  .map((o) => o.trim())
+  .filter(Boolean)
+
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: 'postgresql' }),
   baseURL: env.API_PUBLIC_URL,
   secret: env.AUTH_SECRET,
-  trustedOrigins: [env.WEB_ORIGIN],
+  trustedOrigins,
   // Email/password is intentionally disabled — phone OTP is the only auth path.
   emailAndPassword: { enabled: false },
   user: {

@@ -46,8 +46,12 @@ export async function buildApp() {
     runFirst: true,
   })
   await app.register(cookie, { secret: env.COOKIE_SECRET })
+  // WEB_ORIGIN can be comma-separated for multi-domain prod (e.g. canonical
+  // Vercel URL + custom domain). Pass an array to @fastify/cors so each is
+  // matched exactly.
+  const allowedOrigins = env.WEB_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
   await app.register(cors, {
-    origin: env.WEB_ORIGIN,
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   })

@@ -4,7 +4,22 @@ const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
   HOST: z.string().default('0.0.0.0'),
-  WEB_ORIGIN: z.url().default('http://localhost:5173'),
+  /**
+   * Allowed front-end origin(s). Comma-separated for production
+   * (e.g. "https://bukit.vercel.app,https://bukit.ph"). Each entry must
+   * be a full http(s) URL.
+   */
+  WEB_ORIGIN: z
+    .string()
+    .default('http://localhost:5173')
+    .refine(
+      (v) =>
+        v
+          .split(',')
+          .map((s) => s.trim())
+          .every((s) => /^https?:\/\//.test(s) && s.length < 200),
+      'WEB_ORIGIN must be one or more http(s) URLs, comma-separated',
+    ),
   COOKIE_SECRET: z.string().min(16).default('dev-cookie-secret-change-me-32chars'),
   DATABASE_URL: z.url(),
   AUTH_SECRET: z.string().min(32).default('dev-auth-secret-change-me-32chars-or-more'),
