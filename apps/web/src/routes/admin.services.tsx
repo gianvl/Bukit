@@ -356,8 +356,16 @@ function TierRow({ tier }: { tier: AdminTier }) {
   const [editing, setEditing] = useState(false)
 
   const toggle = useMutation({
-    mutationFn: () =>
-      tier.isActive ? deactivateTier(tier.id) : updateTier(tier.id, { isActive: true }),
+    // Two different return shapes (deactivate → { ok: true }, reactivate
+    // → AdminTier) — we don't use either, so coerce to void for a clean
+    // mutation type.
+    mutationFn: async () => {
+      if (tier.isActive) {
+        await deactivateTier(tier.id)
+      } else {
+        await updateTier(tier.id, { isActive: true })
+      }
+    },
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: adminServicesQueryOptions.queryKey }),
   })
