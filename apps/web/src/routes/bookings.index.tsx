@@ -194,7 +194,7 @@ function EmptyState() {
           Your <span className="italic font-light text-primary">first booking</span> is one tap away.
         </p>
         <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-          Pick a tier, share your address, and a vetted cleaner will be on the way.
+          Pick a service, share your address, and a vetted provider will be on the way.
         </p>
         <Button asChild className="rounded-full px-6">
           <Link to="/services">Browse services</Link>

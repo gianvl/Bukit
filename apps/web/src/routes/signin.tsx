@@ -161,7 +161,7 @@ function SignInPage() {
           <div className="mt-10 grid grid-cols-3 gap-6 max-w-sm border-t border-border/60 pt-6">
             <Stat kpi="NCR" label="all of Metro Manila" />
             <Stat kpi="24h" label="KYC review" />
-            <Stat kpi="₱500" label="from / cleaning" />
+            <Stat kpi="₱100" label="from / booking" />
           </div>
         </aside>
 

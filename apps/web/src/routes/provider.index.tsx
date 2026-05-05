@@ -94,7 +94,7 @@ function ProviderApply() {
           <PageStats className="mt-10">
             <PageStat kpi="80%" label="of every booking" />
             <PageStat kpi="24h" label="KYC review" />
-            <PageStat kpi="₱500+" label="per cleaning" />
+            <PageStat kpi="₱100+" label="per booking" />
           </PageStats>
         </aside>
 
@@ -122,7 +122,7 @@ function ProviderApply() {
                 </Label>
                 <Textarea
                   id="bio"
-                  placeholder="5 years of professional residential cleaning."
+                  placeholder="5 years of professional service experience."
                   rows={4}
                   maxLength={500}
                   value={bio}

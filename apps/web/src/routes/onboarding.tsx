@@ -104,7 +104,7 @@ function OnboardingPage() {
           <PageStats className="mt-10">
             <PageStat kpi="NCR" label="all of Metro Manila" />
             <PageStat kpi="24h" label="provider review" />
-            <PageStat kpi="₱500" label="from / cleaning" />
+            <PageStat kpi="₱100" label="from / booking" />
           </PageStats>
         </aside>
 
@@ -154,7 +154,7 @@ function OnboardingPage() {
                     onPick={() => setRole('USER')}
                     Icon={ShoppingBag}
                     label="Book services"
-                    description="Vetted home cleaners on demand or scheduled."
+                    description="Vetted home services on demand or scheduled."
                   />
                   <RoleOption
                     active={role === 'PROVIDER'}
@@ -175,7 +175,7 @@ function OnboardingPage() {
                     id="bio"
                     rows={3}
                     maxLength={500}
-                    placeholder="5 years of professional residential cleaning."
+                    placeholder="5 years of professional service experience."
                     value={bio}
                     onChange={(e) => setBio(e.target.value)}
                   />

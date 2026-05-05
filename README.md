@@ -1,6 +1,6 @@
 # Bukit
 
-A Grab-style booking marketplace for vetted home cleaners in Metro Manila. Real-time provider matching, online or on-demand bookings, PayMongo escrow, in-app chat, and provider earnings — all from your phone number.
+A Grab-style booking marketplace for vetted home services in Metro Manila — cleaning, laundry, repairs, and more. Real-time provider matching, online or on-demand bookings, PayMongo escrow, in-app chat, KYC, and provider earnings — all from your phone number. Admins manage the catalog and approve KYC submissions from a built-in console.
 
 **Live demo:** [bukit-web.vercel.app](https://bukit-web.vercel.app)
 
@@ -10,7 +10,7 @@ A Grab-style booking marketplace for vetted home cleaners in Metro Manila. Real-
 
 ## What's inside
 
-- **Customers** book a cleaning by tier (Studio → 3BR+), pin their address on the map, pay online (GCash / Maya / card via PayMongo Checkout), and watch the provider's live ETA on a map.
+- **Customers** browse the service catalog, pick a tier, pin their address on the map, pay online (GCash / Maya / card via PayMongo Checkout), and watch the provider's live ETA on a map.
 - **Providers** apply with a short bio, link a payout method (GCash or bank), and accept jobs from a 35 km radius around their current location. Earnings sit in escrow for 24 h, then become eligible for a weekly payout.
 - **Both** sides chat for the duration of the job and for 3 hours after completion. Customers rate the provider 1–5 stars; the average shows on every booking detail page.
 

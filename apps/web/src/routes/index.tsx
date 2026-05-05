@@ -1,11 +1,26 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { motion, type Variants } from 'framer-motion'
-import { ArrowRight, ArrowUpRight, ShieldCheck, Sparkles, Wallet, Wind } from 'lucide-react'
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Shirt,
+  ShieldCheck,
+  Sparkles,
+  SprayCan,
+  Wallet,
+  Wind,
+  Wrench,
+  type LucideIcon,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { formatCentavos, formatDuration } from '@/lib/format'
+import { formatCentavos } from '@/lib/format'
 import { useSession } from '@/lib/auth-client'
 import { meQueryOptions } from '@/features/me/api'
+import {
+  servicesQueryOptions,
+  type ServiceWithTiers,
+} from '@/features/service-tiers/queries'
 import { UserHome } from '@/components/user-home'
 
 export const Route = createFileRoute('/')({
@@ -79,7 +94,7 @@ function Hero() {
               variants={heroChild}
               className="mt-6 font-display text-[clamp(3rem,7vw,5.75rem)] leading-[0.95] tracking-tight text-foreground"
             >
-              A clean home,
+              Trusted home help,
               <br />
               <span className="italic font-light text-primary">on your terms.</span>
             </motion.h1>
@@ -88,14 +103,15 @@ function Hero() {
               variants={heroChild}
               className="mt-7 max-w-md text-base sm:text-lg text-muted-foreground leading-relaxed"
             >
-              Book vetted home cleaners across Metro Manila. Flat rates set upfront.
-              Pay with GCash, Maya, or card. No surprises, ever.
+              Book vetted home services across Metro Manila — cleaning, laundry,
+              repairs, and more. Flat rates set upfront. Pay with GCash, Maya, or
+              card. No surprises, ever.
             </motion.p>
 
             <motion.div variants={heroChild} className="mt-9 flex flex-wrap items-center gap-3">
               <Button asChild size="lg" className="rounded-full px-6 h-12 text-base">
                 <Link to="/services">
-                  Book a cleaner
+                  Book a service
                   <ArrowRight className="size-4" />
                 </Link>
               </Button>
@@ -112,7 +128,7 @@ function Hero() {
             >
               <Stat kpi="NCR" label="all of Metro Manila" />
               <Stat kpi="24h" label="KYC review" />
-              <Stat kpi="₱500" label="from / cleaning" />
+              <Stat kpi="₱100" label="from / booking" />
             </motion.dl>
           </div>
 
@@ -172,7 +188,7 @@ function CreamWash() {
 }
 
 function AvailabilityCard() {
-  const cleaners = [
+  const providers = [
     { initials: 'LR', name: 'Liza R.', tone: 'bg-emerald-100 text-emerald-900' },
     { initials: 'MJ', name: 'Marco J.', tone: 'bg-amber-100 text-amber-900' },
     { initials: 'JA', name: 'Joy A.', tone: 'bg-rose-100 text-rose-900' },
@@ -187,10 +203,10 @@ function AvailabilityCard() {
       <div className="mt-4 flex items-end justify-between">
         <div>
           <p className="font-display text-5xl leading-none">12</p>
-          <p className="mt-1 text-sm text-muted-foreground">cleaners nearby</p>
+          <p className="mt-1 text-sm text-muted-foreground">providers nearby</p>
         </div>
         <div className="flex -space-x-2">
-          {cleaners.map((c) => (
+          {providers.map((c) => (
             <span
               key={c.initials}
               className={
@@ -245,9 +261,9 @@ function Slot({ time, name, rating, jobs }: { time: string; name: string; rating
 
 function Marquee() {
   const items = [
-    'House cleaning',
+    'Home services on demand',
     'Vetted via NBI clearance',
-    'Flat rates from ₱500',
+    'Flat rates upfront',
     'GCash · Maya · card',
     'All of Metro Manila',
     '24-hour KYC',
@@ -281,14 +297,14 @@ function Marquee() {
 
 function HowItWorks() {
   const steps = [
-    { n: '01', title: 'Pick your tier', body: 'Studio to 3-bedroom and up. Flat rates, set upfront.' },
+    { n: '01', title: 'Pick a service', body: 'Browse our menu — cleaning, laundry, repairs and more. Flat rates set upfront.' },
     { n: '02', title: 'Tell us when & where', body: 'Pick a time and address. Notes for your buzzer or pets.' },
-    { n: '03', title: 'A vetted cleaner arrives', body: 'KYC-verified, rated, and matched to your area.' },
+    { n: '03', title: 'A vetted provider arrives', body: 'KYC-verified, rated, and matched to your area.' },
   ]
   return (
     <section id="how-it-works" className="border-b">
       <div className="mx-auto max-w-6xl px-6 py-24">
-        <SectionHeader kicker="How it works" title="Three steps to a spotless home." />
+        <SectionHeader kicker="How it works" title="Three steps from booking to done." />
         <div className="mt-16 grid gap-px sm:grid-cols-3 bg-border/60 rounded-3xl overflow-hidden border">
           {steps.map((s, i) => (
             <motion.div
@@ -316,16 +332,36 @@ function HowItWorks() {
   )
 }
 
-/* ─── Tier preview ──────────────────────────────────────────────────────── */
+/* ─── Featured services ─────────────────────────────────────────────────── */
 
-const PREVIEW_TIERS = [
-  { slug: 'cleaning-studio', name: 'Studio', sub: 'Up to 30 sqm', price: 50_000, mins: 120 },
-  { slug: 'cleaning-1br', name: '1-Bedroom', sub: 'Standard condo', price: 70_000, mins: 180 },
-  { slug: 'cleaning-2br', name: '2-Bedroom', sub: 'Up to 80 sqm', price: 100_000, mins: 240 },
-  { slug: 'cleaning-3br-plus', name: '3-Bedroom +', sub: '80 sqm and up', price: 140_000, mins: 300 },
-] as const
+const ICON_MAP: Record<string, LucideIcon> = {
+  sparkles: Sparkles,
+  'spray-can': SprayCan,
+  shirt: Shirt,
+  wind: Wind,
+  wrench: Wrench,
+}
 
+function iconFor(key: string): LucideIcon {
+  return ICON_MAP[key] ?? Sparkles
+}
+
+function startingPrice(s: ServiceWithTiers): number | null {
+  if (s.tiers.length === 0) return null
+  return Math.min(...s.tiers.map((t) => t.basePriceCentavos))
+}
+
+/**
+ * Live service tiles backed by the public catalog endpoint. Renders the
+ * top 4 active services (already sorted by sortOrder by the API). The
+ * landing only paints something if at least one service exists — for
+ * the empty case we just hide the section so the page doesn't show a
+ * "no services" empty state to first-time visitors.
+ */
 function Tiers() {
+  const { data: services } = useQuery(servicesQueryOptions)
+  const featured = services?.slice(0, 4) ?? []
+  if (featured.length === 0) return null
   return (
     <section className="border-b bg-card">
       <div className="mx-auto max-w-6xl px-6 py-24">
@@ -335,38 +371,51 @@ function Tiers() {
             to="/services"
             className="text-sm text-primary inline-flex items-center gap-1 hover:gap-2 transition-all"
           >
-            All tiers <ArrowUpRight className="size-4" />
+            All services <ArrowUpRight className="size-4" />
           </Link>
         </div>
 
         <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {PREVIEW_TIERS.map((t, i) => (
-            <motion.div
-              key={t.slug}
-              initial={{ opacity: 0, y: 16 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: '-60px' }}
-              transition={{ duration: 0.5, delay: i * 0.06, ease: [0.22, 1, 0.36, 1] }}
-              whileHover={{ y: -4 }}
-            >
-              <Link
-                to="/book/$tierSlug"
-                params={{ tierSlug: t.slug }}
-                className="group block rounded-2xl border bg-background p-6 h-full transition-colors hover:border-primary/50"
+          {featured.map((service, i) => {
+            const Icon = iconFor(service.iconKey)
+            const from = startingPrice(service)
+            return (
+              <motion.div
+                key={service.id}
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: '-60px' }}
+                transition={{ duration: 0.5, delay: i * 0.06, ease: [0.22, 1, 0.36, 1] }}
+                whileHover={{ y: -4 }}
               >
-                <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">{t.sub}</p>
-                <h3 className="mt-2 font-display text-2xl">{t.name}</h3>
-                <p className="mt-6 font-display text-5xl tracking-tight">{formatCentavos(t.price)}</p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  est. {formatDuration(t.mins)}
-                </p>
-                <div className="mt-6 inline-flex items-center gap-1 text-sm text-primary">
-                  Book {t.name}
-                  <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-1" />
-                </div>
-              </Link>
-            </motion.div>
-          ))}
+                <Link
+                  to="/services/$serviceSlug"
+                  params={{ serviceSlug: service.slug }}
+                  className="group block rounded-2xl border bg-background p-6 h-full transition-colors hover:border-primary/50"
+                >
+                  <span className="inline-flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <Icon className="size-4" />
+                  </span>
+                  <h3 className="mt-4 font-display text-2xl">{service.name}</h3>
+                  <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                    {service.description}
+                  </p>
+                  {from !== null && (
+                    <>
+                      <p className="mt-6 font-display text-4xl tracking-tight tabular-nums">
+                        {formatCentavos(from)}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">starting from</p>
+                    </>
+                  )}
+                  <div className="mt-6 inline-flex items-center gap-1 text-sm text-primary">
+                    View tiers
+                    <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-1" />
+                  </div>
+                </Link>
+              </motion.div>
+            )
+          })}
         </div>
       </div>
     </section>
@@ -390,7 +439,7 @@ function TrustGrid() {
     {
       Icon: Wind,
       title: 'Built for Manila life',
-      body: 'Condo buzzers, pets, awkward elevators. Notes go straight to your cleaner.',
+      body: 'Condo buzzers, pets, awkward elevators. Notes go straight to your provider.',
     },
     {
       Icon: Sparkles,

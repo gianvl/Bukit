@@ -53,7 +53,7 @@ export function UserHome() {
             <p className="mt-5 text-base sm:text-lg text-muted-foreground leading-relaxed">
               {isProvider
                 ? 'Track your jobs and earnings at a glance, then jump into the dashboard when you’re ready to work.'
-                : 'Your bookings, in one place. Need a fresh clean? Pick a tier and we’ll match you in minutes.'}
+                : 'Your bookings, in one place. Need help around the house? Pick a service and we’ll match you in minutes.'}
             </p>
           </div>
 
