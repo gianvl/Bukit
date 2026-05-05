@@ -26,7 +26,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { serviceTiersQueryOptions } from '@/features/service-tiers/queries'
+import { allTiersQueryOptions } from '@/features/service-tiers/queries'
 import {
   createBooking,
   startCheckout,
@@ -42,7 +42,7 @@ import { meQueryOptions } from '@/features/me/api'
 
 export const Route = createFileRoute('/book/$tierSlug')({
   component: BookingFlow,
-  loader: ({ context }) => context.queryClient.ensureQueryData(serviceTiersQueryOptions),
+  loader: ({ context }) => context.queryClient.ensureQueryData(allTiersQueryOptions),
   beforeLoad: async ({ location, context }) => {
     const { data } = await getSession()
     if (!data) {
@@ -90,7 +90,7 @@ const initialForm: FormState = {
 function BookingFlow() {
   const { tierSlug } = Route.useParams()
   const navigate = useNavigate()
-  const { data: tiers, isPending } = useQuery(serviceTiersQueryOptions)
+  const { data: tiers, isPending } = useQuery(allTiersQueryOptions)
   const tier = tiers?.find((t) => t.slug === tierSlug)
 
   const [stepIndex, setStepIndex] = useState(0)
