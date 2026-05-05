@@ -38,16 +38,27 @@ import { formatCentavos, formatDuration } from '@/lib/format'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { LocationPicker, type PickedLocation } from '@/components/location-picker'
+import { meQueryOptions } from '@/features/me/api'
 
 export const Route = createFileRoute('/book/$tierSlug')({
   component: BookingFlow,
   loader: ({ context }) => context.queryClient.ensureQueryData(serviceTiersQueryOptions),
-  beforeLoad: async ({ location }) => {
+  beforeLoad: async ({ location, context }) => {
     const { data } = await getSession()
     if (!data) {
       throw redirect({
         to: '/signin',
         search: { redirect: location.href, as: 'customer' },
+      })
+    }
+    // KYC gate (mirrors the server-side 422). If unverified we punt to
+    // /kyc with the original booking URL baked in so they land here once
+    // approved instead of the generic post-KYC home page.
+    const me = await context.queryClient.ensureQueryData(meQueryOptions)
+    if (me && me.kycStatus !== 'APPROVED') {
+      throw redirect({
+        to: '/kyc',
+        search: { redirect: location.href },
       })
     }
   },

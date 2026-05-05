@@ -67,7 +67,16 @@ function OnboardingPage() {
       await queryClient.invalidateQueries({ queryKey: meQueryOptions.queryKey })
       const defaultPath =
         me.role === 'PROVIDER' ? '/provider/dashboard' : '/services'
-      window.location.assign(redirectTo ?? defaultPath)
+      const target = redirectTo ?? defaultPath
+      // KYC is required before booking or accepting jobs. Send the user
+      // straight there with the post-KYC redirect baked in so they land
+      // back where they were headed once approved.
+      if (me.kycStatus !== 'APPROVED') {
+        const kycUrl = `/kyc?redirect=${encodeURIComponent(target)}`
+        window.location.assign(kycUrl)
+        return
+      }
+      window.location.assign(target)
     },
     onError: (err) => {
       setError(err instanceof ApiError ? err.message : 'Could not save')

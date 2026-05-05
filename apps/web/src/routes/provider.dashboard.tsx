@@ -32,8 +32,9 @@ import { useShareLocation, type ShareLocationStatus } from '@/features/providers
 import { getSocket } from '@/lib/socket'
 import { PageEyebrow, PageHero, PageStat, PageStats, PageTitle } from '@/components/page-shell'
 import { earningsQueryOptions } from '@/features/earnings/api'
-import { Wallet } from 'lucide-react'
+import { ShieldCheck, Wallet } from 'lucide-react'
 import { ProviderReviewsCard } from '@/components/provider-reviews-card'
+import type { KycStatus } from '@/features/me/api'
 import { showStatusToast } from '@/features/bookings/status-toasts'
 import { meQueryOptions } from '@/features/me/api'
 import { PaginationBar, usePagination } from '@/components/pagination-bar'
@@ -85,7 +86,12 @@ function ProviderDashboard() {
   const { data: bookings, isPending: bookingsPending } = useQuery(assignedBookingsQueryOptions)
   const { data: available } = useQuery(availableBookingsQueryOptions)
   const { data: earnings } = useQuery(earningsQueryOptions)
+  const { data: me } = useQuery(meQueryOptions)
   const payoutMethodLinked = !!earnings?.payoutMethod
+  const kycApproved = me?.kycStatus === 'APPROVED'
+  // Combined accept-readiness — accept buttons are only "armed" when both
+  // gates pass. The server enforces the same conditions.
+  const canAccept = payoutMethodLinked && kycApproved
 
   // Subscribe to live booking notifications. Server auto-joins us into our city's
   // area room on connect; we just react to events.
@@ -177,7 +183,12 @@ function ProviderDashboard() {
       </PageHero>
 
       <section className="mx-auto max-w-5xl px-6 py-10 space-y-6">
-      {profile.status === 'ACTIVE' && !payoutMethodLinked && <PayoutGateBanner />}
+      {profile.status === 'ACTIVE' && !kycApproved && (
+        <KycGateBanner status={me?.kycStatus ?? 'NOT_SUBMITTED'} />
+      )}
+      {profile.status === 'ACTIVE' && kycApproved && !payoutMethodLinked && (
+        <PayoutGateBanner />
+      )}
 
       {profile.status === 'ACTIVE' && <AvailabilityCard profile={profile} />}
 
@@ -206,7 +217,11 @@ function ProviderDashboard() {
               <ul className="space-y-3">
                 {available.map((b) => (
                   <li key={b.id}>
-                    <AvailableBookingRow booking={b} payoutMethodLinked={payoutMethodLinked} />
+                    <AvailableBookingRow
+                      booking={b}
+                      canAccept={canAccept}
+                      kycApproved={kycApproved}
+                    />
                   </li>
                 ))}
               </ul>
@@ -650,10 +665,12 @@ function AssignedBookingRow({ booking }: { booking: AssignedBooking }) {
 
 function AvailableBookingRow({
   booking,
-  payoutMethodLinked,
+  canAccept,
+  kycApproved,
 }: {
   booking: AssignedBooking
-  payoutMethodLinked: boolean
+  canAccept: boolean
+  kycApproved: boolean
 }) {
   const queryClient = useQueryClient()
   const accept = useMutation({
@@ -712,7 +729,7 @@ function AvailableBookingRow({
           <MapPin className="size-3.5" />
           {booking.addressLine1}, {booking.city}
         </span>
-        {payoutMethodLinked ? (
+        {canAccept ? (
           <Button size="sm" onClick={() => accept.mutate()} disabled={accept.isPending}>
             {accept.isPending ? (
               <>
@@ -722,6 +739,13 @@ function AvailableBookingRow({
             ) : (
               'Accept'
             )}
+          </Button>
+        ) : !kycApproved ? (
+          <Button asChild size="sm" variant="outline">
+            <Link to="/kyc">
+              <ShieldCheck className="size-4" />
+              Verify ID
+            </Link>
           </Button>
         ) : (
           <Button asChild size="sm" variant="outline">
@@ -782,6 +806,48 @@ function formatScheduled(iso: string): string {
     hour: 'numeric',
     minute: '2-digit',
   })
+}
+
+/**
+ * KYC gate banner — shown to providers whose verification isn't APPROVED.
+ * Stronger than the payout banner: until KYC clears, accept buttons are
+ * locked behind a "Verify ID" deep link. Mirrors the server's 422.
+ */
+function KycGateBanner({ status }: { status: KycStatus }) {
+  const copy =
+    status === 'PENDING'
+      ? {
+          title: 'Verification under review',
+          description: 'We typically respond within 24 hours. You can browse jobs in the meantime — accepting unlocks once approved.',
+          cta: 'View status',
+        }
+      : status === 'REJECTED'
+        ? {
+            title: 'Verification needs another look',
+            description: 'Open the verification page to see the reason and resubmit your photos.',
+            cta: 'Resubmit ID',
+          }
+        : {
+            title: 'Verify your ID to start accepting',
+            description: 'Bukit asks every provider for a single government ID + selfie. Takes a minute, reviewed within 24h.',
+            cta: 'Start verification',
+          }
+  return (
+    <Card className="border-amber-400/50 bg-amber-50/50">
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div className="space-y-1">
+          <CardTitle className="text-base inline-flex items-center gap-2">
+            <ShieldCheck className="size-4 text-amber-600" />
+            {copy.title}
+          </CardTitle>
+          <CardDescription>{copy.description}</CardDescription>
+        </div>
+        <Button asChild size="sm" className="rounded-full">
+          <Link to="/kyc">{copy.cta}</Link>
+        </Button>
+      </CardHeader>
+    </Card>
+  )
 }
 
 /**

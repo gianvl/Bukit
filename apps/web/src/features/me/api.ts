@@ -3,6 +3,8 @@ import { api } from '@/lib/api'
 
 export type Role = 'USER' | 'PROVIDER' | 'ADMIN'
 
+export type KycStatus = 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'REJECTED'
+
 export interface Me {
   id: string
   name: string
@@ -10,6 +12,8 @@ export interface Me {
   phoneNumber: string | null
   phoneNumberVerified: boolean
   onboardedAt: string | null
+  /** Mirrors KycSubmission.status; default NOT_SUBMITTED for fresh accounts. */
+  kycStatus: KycStatus
 }
 
 export const meQueryOptions = queryOptions({

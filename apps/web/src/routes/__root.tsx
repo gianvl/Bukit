@@ -63,6 +63,7 @@ function RootLayoutShell({ children }: { children: ReactNode }) {
   }
 
   const isProvider = me?.role === 'PROVIDER'
+  const isAdmin = me?.role === 'ADMIN'
   const displayName = me?.name ?? session?.user.name
   const signedIn = !isPending && !!session?.user
   const showAnon = !isPending && !session?.user
@@ -92,6 +93,11 @@ function RootLayoutShell({ children }: { children: ReactNode }) {
                       <Link to="/provider/earnings">Earnings</Link>
                     </Button>
                   </>
+                )}
+                {isAdmin && (
+                  <Button asChild variant="ghost" size="sm">
+                    <Link to="/admin/services">Admin</Link>
+                  </Button>
                 )}
                 <Button asChild variant="ghost" size="sm">
                   <Link to="/bookings">My bookings</Link>
