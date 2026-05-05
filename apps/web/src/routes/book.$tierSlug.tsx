@@ -26,7 +26,11 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { allTiersQueryOptions } from '@/features/service-tiers/queries'
+import {
+  allTiersQueryOptions,
+  servicesQueryOptions,
+  type ServiceWithTiers,
+} from '@/features/service-tiers/queries'
 import {
   createBooking,
   startCheckout,
@@ -42,7 +46,11 @@ import { meQueryOptions } from '@/features/me/api'
 
 export const Route = createFileRoute('/book/$tierSlug')({
   component: BookingFlow,
-  loader: ({ context }) => context.queryClient.ensureQueryData(allTiersQueryOptions),
+  loader: ({ context }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(allTiersQueryOptions),
+      context.queryClient.ensureQueryData(servicesQueryOptions),
+    ]),
   beforeLoad: async ({ location, context }) => {
     const { data } = await getSession()
     if (!data) {
@@ -64,10 +72,12 @@ export const Route = createFileRoute('/book/$tierSlug')({
   },
 })
 
-const STEPS = ['When & how', 'Address', 'Review'] as const
+const STEPS = ['Service', 'When & how', 'Address', 'Review'] as const
 type Step = (typeof STEPS)[number]
 
 interface FormState {
+  /** Slug of the picked tier — pre-filled from the URL but changeable on step 0. */
+  chosenTierSlug: string
   bookingMode: BookingMode
   paymentMethod: PaymentMethod
   scheduledAt: string
@@ -78,24 +88,28 @@ interface FormState {
   notes: string
 }
 
-const initialForm: FormState = {
-  bookingMode: 'SCHEDULED',
-  paymentMethod: 'ONLINE',
-  scheduledAt: '',
-  place: null,
-  line2: '',
-  notes: '',
-}
-
 function BookingFlow() {
   const { tierSlug } = Route.useParams()
   const navigate = useNavigate()
   const { data: tiers, isPending } = useQuery(allTiersQueryOptions)
-  const tier = tiers?.find((t) => t.slug === tierSlug)
+  const { data: services } = useQuery(servicesQueryOptions)
 
   const [stepIndex, setStepIndex] = useState(0)
-  const [form, setForm] = useState<FormState>(initialForm)
+  const [form, setForm] = useState<FormState>(() => ({
+    // Seed with the URL slug so deep links land on the chosen tier.
+    chosenTierSlug: tierSlug,
+    bookingMode: 'SCHEDULED',
+    paymentMethod: 'ONLINE',
+    scheduledAt: '',
+    place: null,
+    line2: '',
+    notes: '',
+  }))
   const [submitError, setSubmitError] = useState<string | null>(null)
+
+  // The "live" tier is whatever the user has selected in the form, not
+  // what's in the URL. The URL slug only seeds the initial pick.
+  const tier = tiers?.find((t) => t.slug === form.chosenTierSlug)
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -108,13 +122,17 @@ function BookingFlow() {
 
   const canAdvance = (() => {
     if (stepIndex === 0) {
+      // Service step: need a tier that exists in the loaded list.
+      return !!tier
+    }
+    if (stepIndex === 1) {
       if (form.bookingMode === 'SCHEDULED') {
         if (!form.scheduledAt) return false
         return new Date(form.scheduledAt).getTime() > Date.now()
       }
       return true // ON_DEMAND has no datetime to validate
     }
-    if (stepIndex === 1) {
+    if (stepIndex === 2) {
       // Require a picked place with a city — coordinates alone aren't enough
       // because providers in scheduled mode match by city.
       return !!form.place && form.place.city.trim().length > 0
@@ -166,21 +184,15 @@ function BookingFlow() {
   })
 
   if (isPending) return <FlowSkeleton />
-  if (!tier) {
-    return (
-      <section className="mx-auto max-w-md px-6 py-16 text-center space-y-4">
-        <h1 className="text-2xl font-semibold">Service not found</h1>
-        <Button onClick={() => navigate({ to: '/services' })}>Back to services</Button>
-      </section>
-    )
-  }
 
-  const step: Step = STEPS[stepIndex] ?? 'When & how'
+  const step: Step = STEPS[stepIndex] ?? 'Service'
 
   return (
     <section className="mx-auto max-w-2xl px-6 py-10">
       <header className="mb-6">
-        <p className="text-sm text-muted-foreground">Booking · {tier.name}</p>
+        <p className="text-sm text-muted-foreground">
+          Booking{tier ? ` · ${tier.name}` : ''}
+        </p>
         <h1 className="text-2xl font-semibold tracking-tight">{step}</h1>
         <Stepper current={stepIndex} />
       </header>
@@ -194,7 +206,25 @@ function BookingFlow() {
             exit={{ opacity: 0, x: -12 }}
             transition={{ duration: 0.18, ease: 'easeOut' }}
           >
-            {step === 'When & how' && (
+            {step === 'Service' && (
+              <>
+                <CardHeader>
+                  <CardTitle>What service do you need?</CardTitle>
+                  <CardDescription>
+                    Pick a tier — we'll handle the rest.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ServicePicker
+                    services={services ?? []}
+                    chosenTierSlug={form.chosenTierSlug}
+                    onPick={(slug) => update('chosenTierSlug', slug)}
+                  />
+                </CardContent>
+              </>
+            )}
+
+            {step === 'When & how' && tier && (
               <>
                 <CardHeader>
                   <CardTitle>When and how to pay</CardTitle>
@@ -267,7 +297,7 @@ function BookingFlow() {
               </>
             )}
 
-            {step === 'Address' && (
+            {step === 'Address' && tier && (
               <>
                 <CardHeader>
                   <CardTitle>Where are we cleaning?</CardTitle>
@@ -304,7 +334,7 @@ function BookingFlow() {
               </>
             )}
 
-            {step === 'Review' && (
+            {step === 'Review' && tier && (
               <>
                 <CardHeader>
                   <CardTitle>Confirm your booking</CardTitle>
@@ -391,7 +421,7 @@ function BookingFlow() {
               ) : form.paymentMethod === 'ONLINE' ? (
                 <>
                   <CheckCircle2 className="size-4" />
-                  Pay {formatCentavos(tier.basePriceCentavos)}
+                  Pay {tier ? formatCentavos(tier.basePriceCentavos) : ''}
                 </>
               ) : (
                 <>
@@ -412,6 +442,90 @@ interface RadioOption<V extends string> {
   label: string
   description: string
   Icon: typeof Zap
+}
+
+/**
+ * Step-0 service picker. Renders every service the admin has activated,
+ * each with its tiers as selectable price cards. The chosen tier slug
+ * lifts up to the booking form so it can be used through the rest of
+ * the flow.
+ */
+function ServicePicker({
+  services,
+  chosenTierSlug,
+  onPick,
+}: {
+  services: ServiceWithTiers[]
+  chosenTierSlug: string
+  onPick: (slug: string) => void
+}) {
+  if (services.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No services are available right now. Check back soon.
+      </p>
+    )
+  }
+  return (
+    <div className="space-y-6">
+      {services.map((service) => (
+        <div key={service.id}>
+          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+            {service.name}
+          </p>
+          <p className="text-xs text-muted-foreground/80 mt-0.5 line-clamp-1">
+            {service.description}
+          </p>
+          {service.tiers.length === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground italic">
+              No tiers configured yet.
+            </p>
+          ) : (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {service.tiers.map((tier) => {
+                const active = tier.slug === chosenTierSlug
+                return (
+                  <button
+                    key={tier.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => onPick(tier.slug)}
+                    className={cn(
+                      'rounded-xl border p-4 text-left transition-colors',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                      active
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border hover:border-primary/40 hover:bg-muted/40',
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">{tier.name}</span>
+                      {active && (
+                        <span className="size-2 rounded-full bg-primary" aria-hidden />
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                      {tier.description}
+                    </p>
+                    <div className="mt-3 flex items-end justify-between gap-2">
+                      <span className="font-display text-xl tabular-nums">
+                        {formatCentavos(tier.basePriceCentavos)}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
+                        <Clock className="size-3" />
+                        {formatDuration(tier.estimatedMinutes)}
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function RadioGrid<V extends string>({
