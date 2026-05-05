@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
+import { Link, createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
@@ -29,7 +29,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import {
   allTiersQueryOptions,
   servicesQueryOptions,
-  type ServiceWithTiers,
+  type ServiceTier,
 } from '@/features/service-tiers/queries'
 import {
   createBooking,
@@ -110,6 +110,13 @@ function BookingFlow() {
   // The "live" tier is whatever the user has selected in the form, not
   // what's in the URL. The URL slug only seeds the initial pick.
   const tier = tiers?.find((t) => t.slug === form.chosenTierSlug)
+  // Scope the in-flow picker to sibling tiers under the same service so
+  // a user with 20 services doesn't see a wall of unrelated options.
+  // To switch services entirely, we surface a "Choose a different
+  // service" link back to /services.
+  const currentService = services?.find((s) =>
+    s.tiers.some((t) => t.slug === form.chosenTierSlug),
+  )
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -209,17 +216,35 @@ function BookingFlow() {
             {step === 'Service' && (
               <>
                 <CardHeader>
-                  <CardTitle>What service do you need?</CardTitle>
+                  <CardTitle>
+                    {currentService ? `${currentService.name} tiers` : 'Pick a service'}
+                  </CardTitle>
                   <CardDescription>
-                    Pick a tier — we'll handle the rest.
+                    {currentService
+                      ? 'Choose a tier — we will handle the rest.'
+                      : 'Browse our menu, then come back here to book.'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ServicePicker
-                    services={services ?? []}
-                    chosenTierSlug={form.chosenTierSlug}
-                    onPick={(slug) => update('chosenTierSlug', slug)}
-                  />
+                  {currentService ? (
+                    <TierPicker
+                      tiers={currentService.tiers}
+                      chosenTierSlug={form.chosenTierSlug}
+                      onPick={(slug) => update('chosenTierSlug', slug)}
+                    />
+                  ) : (
+                    <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground text-center">
+                      No tier selected.
+                    </div>
+                  )}
+                  <div className="mt-4">
+                    <Button asChild variant="ghost" size="sm">
+                      <Link to="/services">
+                        <ArrowLeft className="size-3.5" />
+                        Choose a different service
+                      </Link>
+                    </Button>
+                  </div>
                 </CardContent>
               </>
             )}
@@ -445,85 +470,66 @@ interface RadioOption<V extends string> {
 }
 
 /**
- * Step-0 service picker. Renders every service the admin has activated,
- * each with its tiers as selectable price cards. The chosen tier slug
- * lifts up to the booking form so it can be used through the rest of
- * the flow.
+ * Step-0 tier picker scoped to a single service. With many services in the
+ * catalog, listing every tier from every service here would create a wall
+ * of unrelated options — instead we render only sibling tiers under the
+ * service the user came in on. To switch services they go back to the
+ * /services index.
  */
-function ServicePicker({
-  services,
+function TierPicker({
+  tiers,
   chosenTierSlug,
   onPick,
 }: {
-  services: ServiceWithTiers[]
+  tiers: ServiceTier[]
   chosenTierSlug: string
   onPick: (slug: string) => void
 }) {
-  if (services.length === 0) {
+  if (tiers.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        No services are available right now. Check back soon.
+      <p className="text-sm text-muted-foreground italic">
+        No tiers configured for this service yet.
       </p>
     )
   }
   return (
-    <div className="space-y-6">
-      {services.map((service) => (
-        <div key={service.id}>
-          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-            {service.name}
-          </p>
-          <p className="text-xs text-muted-foreground/80 mt-0.5 line-clamp-1">
-            {service.description}
-          </p>
-          {service.tiers.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground italic">
-              No tiers configured yet.
-            </p>
-          ) : (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {service.tiers.map((tier) => {
-                const active = tier.slug === chosenTierSlug
-                return (
-                  <button
-                    key={tier.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => onPick(tier.slug)}
-                    className={cn(
-                      'rounded-xl border p-4 text-left transition-colors',
-                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                      active
-                        ? 'border-primary bg-primary/5'
-                        : 'border-border hover:border-primary/40 hover:bg-muted/40',
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium">{tier.name}</span>
-                      {active && (
-                        <span className="size-2 rounded-full bg-primary" aria-hidden />
-                      )}
-                    </div>
-                    <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-                      {tier.description}
-                    </p>
-                    <div className="mt-3 flex items-end justify-between gap-2">
-                      <span className="font-display text-xl tabular-nums">
-                        {formatCentavos(tier.basePriceCentavos)}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
-                        <Clock className="size-3" />
-                        {formatDuration(tier.estimatedMinutes)}
-                      </span>
-                    </div>
-                  </button>
-                )
-              })}
+    <div className="grid gap-2 sm:grid-cols-2">
+      {tiers.map((tier) => {
+        const active = tier.slug === chosenTierSlug
+        return (
+          <button
+            key={tier.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onPick(tier.slug)}
+            className={cn(
+              'rounded-xl border p-4 text-left transition-colors',
+              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+              active
+                ? 'border-primary bg-primary/5'
+                : 'border-border hover:border-primary/40 hover:bg-muted/40',
+            )}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium">{tier.name}</span>
+              {active && <span className="size-2 rounded-full bg-primary" aria-hidden />}
             </div>
-          )}
-        </div>
-      ))}
+            <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+              {tier.description}
+            </p>
+            <div className="mt-3 flex items-end justify-between gap-2">
+              <span className="font-display text-xl tabular-nums">
+                {formatCentavos(tier.basePriceCentavos)}
+              </span>
+              <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
+                <Clock className="size-3" />
+                {formatDuration(tier.estimatedMinutes)}
+              </span>
+            </div>
+          </button>
+        )
+      })}
     </div>
   )
 }
