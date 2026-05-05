@@ -22,6 +22,8 @@ import { webhookRoutes } from './routes/webhooks.js'
 import { messageRoutes } from './routes/messages.js'
 import { geocodingRoutes } from './routes/geocoding.js'
 import { payoutRoutes } from './routes/payouts.js'
+import { serviceRoutes } from './routes/services.js'
+import { kycRoutes } from './routes/kyc.js'
 
 export async function buildApp() {
   const app = Fastify({
@@ -69,6 +71,8 @@ export async function buildApp() {
   await app.register(messageRoutes)
   await app.register(geocodingRoutes)
   await app.register(payoutRoutes)
+  await app.register(serviceRoutes)
+  await app.register(kycRoutes)
 
   return app
 }

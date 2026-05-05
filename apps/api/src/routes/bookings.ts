@@ -192,6 +192,19 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
       const session = requireSession(req)
       const { serviceTierId, scheduledAt, bookingMode, paymentMethod, address, notes } = req.body
 
+      // KYC gate: customers must be APPROVED before booking. The frontend
+      // mirrors this with a redirect to /kyc, but we still enforce it
+      // server-side so a stale tab can't slip past.
+      const me = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { kycStatus: true },
+      })
+      if (me?.kycStatus !== 'APPROVED') {
+        throw app.httpErrors.unprocessableEntity(
+          'Verify your identity before booking. Open Settings → Verification.',
+        )
+      }
+
       const scheduledDate = new Date(scheduledAt)
       if (scheduledDate.getTime() <= Date.now()) {
         throw app.httpErrors.badRequest('scheduledAt must be in the future')
@@ -434,11 +447,21 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
       // can't sneak past a state change between read and write.
       const profile = await prisma.providerProfile.findUnique({
         where: { userId: session.user.id },
-        select: { id: true, status: true, payoutMethod: { select: { id: true } } },
+        select: {
+          id: true,
+          status: true,
+          payoutMethod: { select: { id: true } },
+          user: { select: { kycStatus: true } },
+        },
       })
       if (!profile) throw app.httpErrors.forbidden('Not a provider')
       if (profile.status !== 'ACTIVE') {
         throw app.httpErrors.forbidden('Provider is not active')
+      }
+      if (profile.user.kycStatus !== 'APPROVED') {
+        throw app.httpErrors.unprocessableEntity(
+          'Verify your identity before accepting bookings.',
+        )
       }
       if (!profile.payoutMethod) {
         throw app.httpErrors.unprocessableEntity(

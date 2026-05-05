@@ -90,6 +90,17 @@ enum PayoutMethodType {
   BANK
 }
 
+enum KycStatus {
+  /** User has not yet submitted KYC documents. */
+  NOT_SUBMITTED
+  /** Submitted, awaiting admin review. */
+  PENDING
+  /** Admin approved — gates lift. */
+  APPROVED
+  /** Admin rejected with reason; user can resubmit. */
+  REJECTED
+}
+
 // ─── Auth (Better-Auth managed) ───────────────────────────────────────────
 
 model User {
@@ -105,6 +116,12 @@ model User {
   role                UserRole @default(USER)
   /** Set when the user completes the onboarding flow (name + role chosen). */
   onboardedAt         DateTime?
+  /**
+   * Mirror of the latest KycSubmission.status (or NOT_SUBMITTED if none),
+   * denormalized so booking + accept gates check a single column without
+   * joining. Kept in sync by the KYC submit/approve/reject handlers.
+   */
+  kycStatus           KycStatus @default(NOT_SUBMITTED)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -114,8 +131,11 @@ model User {
   bookings        Booking[]        @relation("BookingsByUser")
   reviews         Review[]         @relation("ReviewsByUser")
   messages        Message[]
+  kycSubmission   KycSubmission?   @relation("KycByUser")
+  reviewedKycs    KycSubmission[]  @relation("KycReviewer")
 
   @@index([role])
+  @@index([kycStatus])
 }
 
 model Session {
@@ -204,8 +224,36 @@ model ProviderProfile {
   @@index([availabilityMode])
 }
 
+/**
+ * Top-level service category (Cleaning, Laundry, AC repair, …). Owns one
+ * or more ServiceTier rows that the customer picks from at booking time.
+ * Admin manages the catalog from /admin/services.
+ */
+model Service {
+  id          String   @id @default(cuid(2))
+  slug        String   @unique
+  name        String
+  description String
+  /**
+   * Lucide icon key used by the frontend to render the service card.
+   * Must match a key in the web app's ICON_MAP (e.g. "sparkles", "shirt").
+   */
+  iconKey     String   @default("sparkles")
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tiers ServiceTier[]
+
+  @@index([isActive, sortOrder])
+}
+
 model ServiceTier {
   id                String   @id @default(cuid(2))
+  /** FK to the parent Service. Required — every tier belongs to a service. */
+  serviceId         String
+  service           Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   slug              String   @unique
   name              String
   description       String
@@ -217,6 +265,8 @@ model ServiceTier {
   updatedAt         DateTime @updatedAt
 
   bookings Booking[]
+
+  @@index([serviceId, sortOrder])
 }
 
 model Booking {
@@ -384,4 +434,33 @@ model Review {
   createdAt DateTime @default(now())
 
   @@index([userId])
+}
+
+/**
+ * One simple KYC packet per user: government ID photo + selfie. Single row
+ * per user (`userId @unique`) — re-submitting after a rejection updates the
+ * existing row in place. Admin reviews from /admin/kyc.
+ */
+model KycSubmission {
+  id              String    @id @default(cuid(2))
+  userId          String    @unique
+  user            User      @relation("KycByUser", fields: [userId], references: [id], onDelete: Cascade)
+  status          KycStatus @default(PENDING)
+  /** Type of government ID submitted (PhilSys, Driver's License, Passport, etc.). */
+  govIdType       String
+  /** ID number as shown on the document. */
+  govIdNumber     String
+  /** Vercel Blob public URL for the gov ID photo. */
+  govIdImageUrl   String
+  /** Vercel Blob public URL for the selfie. */
+  selfieUrl       String
+  /** Set when status = REJECTED. Visible to the user on their /kyc page. */
+  rejectionReason String?
+  reviewedById    String?
+  reviewedBy      User?     @relation("KycReviewer", fields: [reviewedById], references: [id])
+  reviewedAt      DateTime?
+  submittedAt     DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, submittedAt])
 }

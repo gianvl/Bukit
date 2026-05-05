@@ -56,6 +56,7 @@ const MeDto = z.object({
   phoneNumber: z.string().nullable(),
   phoneNumberVerified: z.boolean(),
   onboardedAt: z.iso.datetime().nullable(),
+  kycStatus: z.enum(['NOT_SUBMITTED', 'PENDING', 'APPROVED', 'REJECTED']),
 });
 
 const OnboardingBody = z.object({
@@ -82,6 +83,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
           phoneNumber: true,
           phoneNumberVerified: true,
           onboardedAt: true,
+          kycStatus: true,
         },
       });
       return {
@@ -91,6 +93,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
         phoneNumber: dbUser?.phoneNumber ?? null,
         phoneNumberVerified: dbUser?.phoneNumberVerified ?? false,
         onboardedAt: dbUser?.onboardedAt?.toISOString() ?? null,
+        kycStatus: dbUser?.kycStatus ?? 'NOT_SUBMITTED',
       };
     }
   );
@@ -132,6 +135,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
             phoneNumber: true,
             phoneNumberVerified: true,
             onboardedAt: true,
+            kycStatus: true,
           },
         });
         if (role === "PROVIDER") {
@@ -159,6 +163,7 @@ export const meRoutes: FastifyPluginAsyncZod = async (app) => {
         phoneNumber: updated.phoneNumber,
         phoneNumberVerified: updated.phoneNumberVerified,
         onboardedAt: updated.onboardedAt?.toISOString() ?? null,
+        kycStatus: updated.kycStatus,
       };
     }
   );

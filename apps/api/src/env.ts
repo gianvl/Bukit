@@ -35,6 +35,11 @@ const EnvSchema = z.object({
   PHILSMS_BASE_URL: z.url().default('https://dashboard.philsms.com/api/v3'),
   PHILSMS_API_KEY: z.string().min(1),
   PHILSMS_SENDER_ID: z.string().min(1).default('PhilSMS'),
+
+  // Vercel Blob — KYC document uploads. Optional in dev: when unset the
+  // /kyc/upload-token endpoint refuses with a clear error so the rest of
+  // the API still boots without the integration.
+  BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
 })
 
 const parsed = EnvSchema.safeParse(process.env)
