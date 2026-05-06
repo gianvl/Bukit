@@ -7,8 +7,9 @@ export interface KycMe {
   status: KycStatus
   govIdType: string | null
   govIdNumber: string | null
-  govIdImageUrl: string | null
-  selfieUrl: string | null
+  /** Whether the photo is on file. Bytes are served through `/api/kyc/photo/:id/:kind` (auth-gated). */
+  hasGovIdImage: boolean
+  hasSelfie: boolean
   rejectionReason: string | null
   submittedAt: string | null
   reviewedAt: string | null

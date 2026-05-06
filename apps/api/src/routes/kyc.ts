@@ -10,9 +10,11 @@ import { env } from '../env.js'
  * `/admin/kyc` and clicks Approve / Reject (with reason). Customer-side
  * gating (block booking until approved) is enforced in `bookings.ts`.
  *
- * Files don't transit Fastify — the browser uploads directly to Vercel
- * Blob using a one-time token issued here. That keeps Railway free of
- * multipart handling and avoids the platform's body-size cap.
+ * Privacy model: photos live in a Vercel Blob *private* store, so the
+ * upstream URL (`*.private.blob.vercel-storage.com/...`) requires the
+ * BLOB_READ_WRITE_TOKEN to read. We never return that URL to clients.
+ * Instead, GET /kyc/photo/:submissionId/:kind streams the bytes through
+ * an auth-gated proxy: only the submission's owner or an admin can fetch.
  */
 
 const KycStatusEnum = z.enum(['NOT_SUBMITTED', 'PENDING', 'APPROVED', 'REJECTED'])
@@ -21,8 +23,9 @@ const KycDto = z.object({
   status: KycStatusEnum,
   govIdType: z.string().nullable(),
   govIdNumber: z.string().nullable(),
-  govIdImageUrl: z.string().nullable(),
-  selfieUrl: z.string().nullable(),
+  /** True iff the photo is on file. Bytes are served via /kyc/photo/:id/:kind. */
+  hasGovIdImage: z.boolean(),
+  hasSelfie: z.boolean(),
   rejectionReason: z.string().nullable(),
   submittedAt: z.iso.datetime().nullable(),
   reviewedAt: z.iso.datetime().nullable(),
@@ -51,12 +54,20 @@ const AdminKycListItem = z.object({
   status: KycStatusEnum,
   govIdType: z.string(),
   govIdNumber: z.string(),
-  govIdImageUrl: z.string(),
-  selfieUrl: z.string(),
+  /** Auth-gated proxy paths admin UI uses as <img src>. Raw blob URLs are never sent to the client. */
+  govIdProxyPath: z.string(),
+  selfieProxyPath: z.string(),
   rejectionReason: z.string().nullable(),
   submittedAt: z.iso.datetime(),
   reviewedAt: z.iso.datetime().nullable(),
 })
+
+const PHOTO_KINDS = ['gov-id', 'selfie'] as const
+type PhotoKind = (typeof PHOTO_KINDS)[number]
+
+function proxyPath(submissionId: string, kind: PhotoKind): string {
+  return `/kyc/photo/${submissionId}/${kind}`
+}
 
 export const kycRoutes: FastifyPluginAsyncZod = async (app) => {
   /**
@@ -115,8 +126,12 @@ export const kycRoutes: FastifyPluginAsyncZod = async (app) => {
           'kyc.upload: starting Vercel Blob put',
         )
 
+        // `access: 'private'` on a Vercel Blob private store. The returned
+        // URL is on `*.private.blob.vercel-storage.com` and requires the
+        // BLOB_READ_WRITE_TOKEN to read. The SDK type defs in 2.3.x only
+        // list 'public', so cast to suppress — the runtime accepts it.
         const blob = await put(pathname, buffer, {
-          access: 'public',
+          access: 'private' as 'public',
           token: env.BLOB_READ_WRITE_TOKEN,
           contentType: file.mimetype,
           addRandomSuffix: true,
@@ -161,8 +176,8 @@ export const kycRoutes: FastifyPluginAsyncZod = async (app) => {
           status: 'NOT_SUBMITTED' as const,
           govIdType: null,
           govIdNumber: null,
-          govIdImageUrl: null,
-          selfieUrl: null,
+          hasGovIdImage: false,
+          hasSelfie: false,
           rejectionReason: null,
           submittedAt: null,
           reviewedAt: null,
@@ -172,8 +187,8 @@ export const kycRoutes: FastifyPluginAsyncZod = async (app) => {
         status: sub.status,
         govIdType: sub.govIdType,
         govIdNumber: sub.govIdNumber,
-        govIdImageUrl: sub.govIdImageUrl,
-        selfieUrl: sub.selfieUrl,
+        hasGovIdImage: !!sub.govIdImageUrl,
+        hasSelfie: !!sub.selfieUrl,
         rejectionReason: sub.rejectionReason,
         submittedAt: sub.submittedAt.toISOString(),
         reviewedAt: sub.reviewedAt?.toISOString() ?? null,
@@ -229,8 +244,8 @@ export const kycRoutes: FastifyPluginAsyncZod = async (app) => {
         status: sub.sub.status,
         govIdType: sub.sub.govIdType,
         govIdNumber: sub.sub.govIdNumber,
-        govIdImageUrl: sub.sub.govIdImageUrl,
-        selfieUrl: sub.sub.selfieUrl,
+        hasGovIdImage: !!sub.sub.govIdImageUrl,
+        hasSelfie: !!sub.sub.selfieUrl,
         rejectionReason: sub.sub.rejectionReason,
         submittedAt: sub.sub.submittedAt.toISOString(),
         reviewedAt: sub.sub.reviewedAt?.toISOString() ?? null,
@@ -272,8 +287,8 @@ export const kycRoutes: FastifyPluginAsyncZod = async (app) => {
           status: s.status,
           govIdType: s.govIdType,
           govIdNumber: s.govIdNumber,
-          govIdImageUrl: s.govIdImageUrl,
-          selfieUrl: s.selfieUrl,
+          govIdProxyPath: proxyPath(s.id, 'gov-id'),
+          selfieProxyPath: proxyPath(s.id, 'selfie'),
           rejectionReason: s.rejectionReason,
           submittedAt: s.submittedAt.toISOString(),
           reviewedAt: s.reviewedAt?.toISOString() ?? null,
@@ -325,12 +340,79 @@ export const kycRoutes: FastifyPluginAsyncZod = async (app) => {
         status: updated.status,
         govIdType: updated.govIdType,
         govIdNumber: updated.govIdNumber,
-        govIdImageUrl: updated.govIdImageUrl,
-        selfieUrl: updated.selfieUrl,
+        hasGovIdImage: !!updated.govIdImageUrl,
+        hasSelfie: !!updated.selfieUrl,
         rejectionReason: updated.rejectionReason,
         submittedAt: updated.submittedAt.toISOString(),
         reviewedAt: updated.reviewedAt?.toISOString() ?? null,
       }
+    },
+  )
+
+  /**
+   * Auth-gated proxy: streams a KYC photo's bytes to the submission's
+   * owner or to an admin. The Vercel Blob URL is private (requires the
+   * BLOB_READ_WRITE_TOKEN to read), so we never return it directly to
+   * the client — admin and owner UIs use this proxy as `<img src>`.
+   *
+   * Headers: `Cache-Control: private, no-store` so browsers don't keep
+   * the bytes on disk (per Vercel's private-storage guidance).
+   */
+  app.get(
+    '/kyc/photo/:id/:kind',
+    {
+      schema: {
+        params: z.object({
+          id: z.string().min(1),
+          kind: z.enum(['gov-id', 'selfie']),
+        }),
+      },
+    },
+    async (req, reply) => {
+      const session = requireSession(req)
+      if (!env.BLOB_READ_WRITE_TOKEN) {
+        throw app.httpErrors.serviceUnavailable('Uploads not configured')
+      }
+
+      const sub = await prisma.kycSubmission.findUnique({
+        where: { id: req.params.id },
+        select: { userId: true, govIdImageUrl: true, selfieUrl: true },
+      })
+      if (!sub) throw app.httpErrors.notFound('Submission not found')
+
+      const callerRole = (session.user as { role?: string }).role ?? 'USER'
+      const isOwner = sub.userId === session.user.id
+      const isAdmin = callerRole === 'ADMIN'
+      if (!isOwner && !isAdmin) throw app.httpErrors.forbidden('Forbidden')
+
+      const blobUrl = req.params.kind === 'gov-id' ? sub.govIdImageUrl : sub.selfieUrl
+      if (!blobUrl) throw app.httpErrors.notFound('No photo on file')
+
+      // Private blob URLs reject anonymous fetches — bearer auth with our
+      // token unlocks the bytes server-side. The browser never sees the
+      // upstream URL or the token.
+      const upstream = await fetch(blobUrl, {
+        headers: { Authorization: `Bearer ${env.BLOB_READ_WRITE_TOKEN}` },
+      })
+      if (!upstream.ok || !upstream.body) {
+        req.log.warn(
+          { status: upstream.status, blobUrl },
+          'kyc.photo proxy: upstream fetch failed',
+        )
+        throw app.httpErrors.badGateway('Could not fetch photo')
+      }
+
+      reply.header(
+        'content-type',
+        upstream.headers.get('content-type') ?? 'application/octet-stream',
+      )
+      const len = upstream.headers.get('content-length')
+      if (len) reply.header('content-length', len)
+      reply.header('cache-control', 'private, no-store')
+      // Stream the bytes through Fastify. Buffering keeps the code simple
+      // and KYC photos are small (<= 8 MB) so the memory pressure is fine.
+      const ab = await upstream.arrayBuffer()
+      return reply.send(Buffer.from(ab))
     },
   )
 }

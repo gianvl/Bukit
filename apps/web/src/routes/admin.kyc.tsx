@@ -132,8 +132,11 @@ function SubmissionCard({ submission }: { submission: AdminKycSubmission }) {
         </CardHeader>
 
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          <PhotoSlot label="Government ID" url={submission.govIdImageUrl} />
-          <PhotoSlot label="Selfie" url={submission.selfieUrl} />
+          <PhotoSlot
+            label="Government ID"
+            url={`/api${submission.govIdProxyPath}`}
+          />
+          <PhotoSlot label="Selfie" url={`/api${submission.selfieProxyPath}`} />
         </CardContent>
 
         {submission.status === 'PENDING' && (

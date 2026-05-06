@@ -89,8 +89,9 @@ export interface AdminKycSubmission {
   status: KycStatus
   govIdType: string
   govIdNumber: string
-  govIdImageUrl: string
-  selfieUrl: string
+  /** Auth-gated proxy paths. Use as `<img src>` against the same origin (Vercel rewrites to API). */
+  govIdProxyPath: string
+  selfieProxyPath: string
   rejectionReason: string | null
   submittedAt: string
   reviewedAt: string | null
