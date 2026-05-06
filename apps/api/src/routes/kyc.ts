@@ -81,10 +81,28 @@ export const kycRoutes: FastifyPluginAsyncZod = async (app) => {
       }
       const userId = session.user.id
 
+      // @vercel/blob/client expects a web `Request`, but Fastify gives us
+      // a Node `IncomingMessage`. Convert so handleUpload computes the
+      // signed-token URL against the real public origin (otherwise the
+      // browser ends up PUT-ing to an invalid URL like
+      // `https://vercel.com/api/blob/?pathname=…` and gets a 400).
+      const protocol =
+        (req.headers['x-forwarded-proto'] as string | undefined) ?? req.protocol
+      const host = req.headers.host ?? 'localhost'
+      const webHeaders = new Headers()
+      for (const [key, value] of Object.entries(req.headers)) {
+        if (typeof value === 'string') webHeaders.set(key, value)
+      }
+      const webRequest = new Request(`${protocol}://${host}${req.url}`, {
+        method: req.method,
+        headers: webHeaders,
+        body: JSON.stringify(req.body ?? {}),
+      })
+
       try {
         const result = await handleUpload({
           body: req.body as HandleUploadBody,
-          request: req.raw,
+          request: webRequest,
           token: env.BLOB_READ_WRITE_TOKEN,
           onBeforeGenerateToken: async (pathname, _clientPayload) => {
             // Sandbox each user's uploads so the URL someone receives can
