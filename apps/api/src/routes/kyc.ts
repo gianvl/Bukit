@@ -99,6 +99,13 @@ export const kycRoutes: FastifyPluginAsyncZod = async (app) => {
         body: JSON.stringify(req.body ?? {}),
       })
 
+      // Vercel Blob calls back to this URL after a successful client upload.
+      // We don't actually need a callback (the browser does the real work
+      // via /kyc/submit), but the SDK still requires the URL to be derivable
+      // from the request — and behind Railway's proxy the request URL is
+      // unreliable. API_PUBLIC_URL is our canonical public origin, so use it.
+      const callbackUrl = `${env.API_PUBLIC_URL.replace(/\/$/, '')}/kyc/upload-token`
+
       try {
         const result = await handleUpload({
           body: req.body as HandleUploadBody,
@@ -115,11 +122,8 @@ export const kycRoutes: FastifyPluginAsyncZod = async (app) => {
               maximumSizeInBytes: 8 * 1024 * 1024, // 8 MB
               addRandomSuffix: true,
               tokenPayload: JSON.stringify({ userId }),
+              callbackUrl,
             }
-          },
-          onUploadCompleted: async () => {
-            // No-op for now — actual KYC submission happens via /kyc/submit.
-            // We could log here for telemetry if needed.
           },
         })
         return reply.send(result)
