@@ -76,7 +76,7 @@ export const kycRoutes: FastifyPluginAsyncZod = async (app) => {
     {
       schema: {
         querystring: z.object({ kind: z.enum(['gov-id', 'selfie']) }),
-        response: { 200: z.object({ url: z.url() }) },
+        response: { 200: z.object({ url: z.string() }) },
       },
     },
     async (req) => {
@@ -85,30 +85,65 @@ export const kycRoutes: FastifyPluginAsyncZod = async (app) => {
         throw app.httpErrors.serviceUnavailable('Uploads not configured')
       }
 
-      const file = await req.file()
-      if (!file) throw app.httpErrors.badRequest('No file uploaded')
-      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
-        throw app.httpErrors.badRequest('Only JPEG, PNG, or WebP images')
-      }
+      try {
+        const file = await req.file()
+        if (!file) throw app.httpErrors.badRequest('No file uploaded')
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+          throw app.httpErrors.badRequest('Only JPEG, PNG, or WebP images')
+        }
 
-      const buffer = await file.toBuffer()
-      // Multipart's stream-level limit catches huge files first; this is a
-      // belt-and-braces check after we've buffered the bytes.
-      if (buffer.byteLength > 8 * 1024 * 1024) {
-        throw app.httpErrors.payloadTooLarge('File exceeds 8 MB limit')
-      }
+        const buffer = await file.toBuffer()
+        // Multipart's stream-level limit catches huge files first; this is a
+        // belt-and-braces check after we've buffered the bytes.
+        if (buffer.byteLength > 8 * 1024 * 1024) {
+          throw app.httpErrors.payloadTooLarge('File exceeds 8 MB limit')
+        }
 
-      // Path: kyc/{userId}/{kind}/{filename}. addRandomSuffix prevents two
-      // uploads with the same source filename from clobbering each other.
-      const safeName = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_')
-      const pathname = `kyc/${session.user.id}/${req.query.kind}/${safeName}`
-      const blob = await put(pathname, buffer, {
-        access: 'public',
-        token: env.BLOB_READ_WRITE_TOKEN,
-        contentType: file.mimetype,
-        addRandomSuffix: true,
-      })
-      return { url: blob.url }
+        // Path: kyc/{userId}/{kind}/{filename}. addRandomSuffix prevents two
+        // uploads with the same source filename from clobbering each other.
+        const safeName = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_')
+        const pathname = `kyc/${session.user.id}/${req.query.kind}/${safeName}`
+
+        req.log.info(
+          {
+            userId: session.user.id,
+            kind: req.query.kind,
+            filename: safeName,
+            mimetype: file.mimetype,
+            sizeBytes: buffer.byteLength,
+          },
+          'kyc.upload: starting Vercel Blob put',
+        )
+
+        const blob = await put(pathname, buffer, {
+          access: 'public',
+          token: env.BLOB_READ_WRITE_TOKEN,
+          contentType: file.mimetype,
+          addRandomSuffix: true,
+        })
+        req.log.info({ url: blob.url }, 'kyc.upload: blob put ok')
+        return { url: blob.url }
+      } catch (err) {
+        // Surface the real reason in logs — the default 500 swallows it
+        // and the browser just sees "Internal server error" with no clue.
+        req.log.error(
+          {
+            err,
+            errMessage: err instanceof Error ? err.message : String(err),
+            errStack: err instanceof Error ? err.stack : undefined,
+          },
+          'kyc.upload failed',
+        )
+        if (
+          err &&
+          typeof err === 'object' &&
+          'statusCode' in (err as Record<string, unknown>)
+        ) {
+          throw err
+        }
+        const message = err instanceof Error ? err.message : 'Upload failed'
+        throw app.httpErrors.internalServerError(message)
+      }
     },
   )
 
