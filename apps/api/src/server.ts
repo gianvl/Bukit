@@ -3,6 +3,7 @@ import cors from '@fastify/cors'
 import cookie from '@fastify/cookie'
 import sensible from '@fastify/sensible'
 import rawBody from 'fastify-raw-body'
+import multipart from '@fastify/multipart'
 import {
   serializerCompiler,
   validatorCompiler,
@@ -46,6 +47,12 @@ export async function buildApp() {
     global: false,
     encoding: false, // Buffer
     runFirst: true,
+  })
+  // KYC photo uploads land on /kyc/upload as multipart/form-data and we
+  // forward them to Vercel Blob server-side. 8 MB matches our Blob token
+  // policy; Fastify rejects bigger files before they hit our handler.
+  await app.register(multipart, {
+    limits: { fileSize: 8 * 1024 * 1024, files: 1 },
   })
   await app.register(cookie, { secret: env.COOKIE_SECRET })
   // WEB_ORIGIN can be comma-separated for multi-domain prod (e.g. canonical

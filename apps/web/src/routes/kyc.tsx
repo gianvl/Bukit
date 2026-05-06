@@ -74,11 +74,10 @@ const ID_TYPES = [
 
 function KycPage() {
   const { data: kyc } = useQuery(kycMeQueryOptions)
-  const { data: me } = useQuery(meQueryOptions)
   const navigate = useNavigate()
   const search = useSearch({ from: '/kyc' })
 
-  if (!kyc || !me) return <KycSkeleton />
+  if (!kyc) return <KycSkeleton />
 
   // Already approved → bounce out (or to the redirect target if one was set).
   if (kyc.status === 'APPROVED') {
@@ -95,7 +94,7 @@ function KycPage() {
   }
 
   // Not yet submitted, or rejected: show the form.
-  return <SubmissionForm kyc={kyc} userId={me.id} redirectTarget={search.redirect ?? '/'} />
+  return <SubmissionForm kyc={kyc} redirectTarget={search.redirect ?? '/'} />
 }
 
 /* ─── States ────────────────────────────────────────────────────────── */
@@ -152,11 +151,9 @@ function PendingPanel({ kyc }: { kyc: KycMe }) {
 
 function SubmissionForm({
   kyc,
-  userId,
   redirectTarget,
 }: {
   kyc: KycMe
-  userId: string
   redirectTarget: string
 }) {
   const queryClient = useQueryClient()
@@ -182,8 +179,8 @@ function SubmissionForm({
       // Upload both files in parallel — they're sandboxed to this user's
       // own folder by the server-side token policy.
       const [govIdImageUrl, selfieUrl] = await Promise.all([
-        uploadKycFile(govIdFile, 'gov-id', userId),
-        uploadKycFile(selfieFile, 'selfie', userId),
+        uploadKycFile(govIdFile, 'gov-id'),
+        uploadKycFile(selfieFile, 'selfie'),
       ])
       setPhase('submitting')
       return submitKyc({

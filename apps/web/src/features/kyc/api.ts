@@ -1,6 +1,5 @@
 import { queryOptions } from '@tanstack/react-query'
-import { upload } from '@vercel/blob/client'
-import { api } from '@/lib/api'
+import { api, ApiError } from '@/lib/api'
 
 export type KycStatus = 'NOT_SUBMITTED' | 'PENDING' | 'APPROVED' | 'REJECTED'
 
@@ -33,23 +32,40 @@ export function submitKyc(input: SubmitKycInput) {
 }
 
 /**
- * Uploads a single KYC document to Vercel Blob via a one-time token issued
- * by our API. Returns the public URL we then submit with `submitKyc`.
- *
- * The pathname is hard-prefixed with `kyc/{userId}/{kind}/...` server-side
- * for sandboxing; we just choose the "kind" segment + filename here.
+ * Uploads a single KYC document via our API as multipart/form-data. The
+ * server relays it to Vercel Blob and returns the public URL. We then
+ * pass that URL to `submitKyc`.
  */
 export async function uploadKycFile(
   file: File,
   kind: 'gov-id' | 'selfie',
-  userId: string,
 ): Promise<string> {
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
-  const pathname = `kyc/${userId}/${kind}/${safeName}`
-  const blob = await upload(pathname, file, {
-    access: 'public',
-    handleUploadUrl: '/api/kyc/upload-token',
-    contentType: file.type,
+  const formData = new FormData()
+  formData.append('file', file, file.name)
+
+  // We can't use the `api.post` helper because it stringifies the body as
+  // JSON; multipart uploads need the raw FormData and must NOT set a
+  // Content-Type (the browser fills in the boundary). Reach for fetch
+  // directly so the upload goes via the same Vercel rewrite + cookies
+  // as the rest of the API.
+  const url = `/api/kyc/upload?kind=${encodeURIComponent(kind)}`
+  const res = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
   })
-  return blob.url
+
+  if (!res.ok) {
+    let message = `Upload failed (${res.status})`
+    try {
+      const body = (await res.json()) as { message?: string; code?: string }
+      if (body.message) message = body.message
+    } catch {
+      // ignore — fall through to the generic message
+    }
+    throw new ApiError(res.status, 'UPLOAD_FAILED', message)
+  }
+
+  const json = (await res.json()) as { url: string }
+  return json.url
 }

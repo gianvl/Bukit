@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod'
 import { z } from 'zod'
-import { handleUpload, type HandleUploadBody } from '@vercel/blob/client'
+import { put } from '@vercel/blob'
 import { prisma } from '../lib/prisma.js'
 import { requireRole, requireSession } from '../lib/auth-fastify.js'
 import { env } from '../env.js'
@@ -60,77 +60,55 @@ const AdminKycListItem = z.object({
 
 export const kycRoutes: FastifyPluginAsyncZod = async (app) => {
   /**
-   * Browser asks for a Vercel Blob upload token. We constrain the path
-   * (`kyc/{userId}/...`) and content type so a malicious client can't
-   * upload arbitrary files outside their KYC folder.
+   * Server-side photo upload. Browser POSTs the file as multipart/form-data
+   * with a `kind` query param (gov-id | selfie); we relay it to Vercel
+   * Blob server-side and return the public URL.
    *
-   * The body shape is dictated by Vercel's `handleUpload` helper — it's
-   * a discriminated union of "blob.generate-client-token" and
-   * "blob.upload-completed" events.
+   * Why server-side instead of @vercel/blob/client.upload(): the client
+   * flow needs the SDK to derive a public origin from the inbound
+   * request, and behind Railway's proxy + Vercel's rewrite that origin
+   * is unreliable. Server-side uploads sidestep all of that — at the
+   * cost of one extra hop through the API, which is fine for a 2-3 MB
+   * KYC photo.
    */
   app.post(
-    '/kyc/upload-token',
+    '/kyc/upload',
     {
-      // Body is opaque to us — Vercel's helper validates it.
-      schema: { body: z.unknown() },
+      schema: {
+        querystring: z.object({ kind: z.enum(['gov-id', 'selfie']) }),
+        response: { 200: z.object({ url: z.url() }) },
+      },
     },
-    async (req, reply) => {
+    async (req) => {
       const session = requireSession(req)
       if (!env.BLOB_READ_WRITE_TOKEN) {
         throw app.httpErrors.serviceUnavailable('Uploads not configured')
       }
-      const userId = session.user.id
 
-      // @vercel/blob/client expects a web `Request`, but Fastify gives us
-      // a Node `IncomingMessage`. Convert so handleUpload computes the
-      // signed-token URL against the real public origin (otherwise the
-      // browser ends up PUT-ing to an invalid URL like
-      // `https://vercel.com/api/blob/?pathname=…` and gets a 400).
-      const protocol =
-        (req.headers['x-forwarded-proto'] as string | undefined) ?? req.protocol
-      const host = req.headers.host ?? 'localhost'
-      const webHeaders = new Headers()
-      for (const [key, value] of Object.entries(req.headers)) {
-        if (typeof value === 'string') webHeaders.set(key, value)
+      const file = await req.file()
+      if (!file) throw app.httpErrors.badRequest('No file uploaded')
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) {
+        throw app.httpErrors.badRequest('Only JPEG, PNG, or WebP images')
       }
-      const webRequest = new Request(`${protocol}://${host}${req.url}`, {
-        method: req.method,
-        headers: webHeaders,
-        body: JSON.stringify(req.body ?? {}),
+
+      const buffer = await file.toBuffer()
+      // Multipart's stream-level limit catches huge files first; this is a
+      // belt-and-braces check after we've buffered the bytes.
+      if (buffer.byteLength > 8 * 1024 * 1024) {
+        throw app.httpErrors.payloadTooLarge('File exceeds 8 MB limit')
+      }
+
+      // Path: kyc/{userId}/{kind}/{filename}. addRandomSuffix prevents two
+      // uploads with the same source filename from clobbering each other.
+      const safeName = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_')
+      const pathname = `kyc/${session.user.id}/${req.query.kind}/${safeName}`
+      const blob = await put(pathname, buffer, {
+        access: 'public',
+        token: env.BLOB_READ_WRITE_TOKEN,
+        contentType: file.mimetype,
+        addRandomSuffix: true,
       })
-
-      // Vercel Blob calls back to this URL after a successful client upload.
-      // We don't actually need a callback (the browser does the real work
-      // via /kyc/submit), but the SDK still requires the URL to be derivable
-      // from the request — and behind Railway's proxy the request URL is
-      // unreliable. API_PUBLIC_URL is our canonical public origin, so use it.
-      const callbackUrl = `${env.API_PUBLIC_URL.replace(/\/$/, '')}/kyc/upload-token`
-
-      try {
-        const result = await handleUpload({
-          body: req.body as HandleUploadBody,
-          request: webRequest,
-          token: env.BLOB_READ_WRITE_TOKEN,
-          onBeforeGenerateToken: async (pathname, _clientPayload) => {
-            // Sandbox each user's uploads so the URL someone receives can
-            // only be used to write into their own folder.
-            if (!pathname.startsWith(`kyc/${userId}/`)) {
-              throw new Error(`pathname must start with kyc/${userId}/`)
-            }
-            return {
-              allowedContentTypes: ['image/jpeg', 'image/png', 'image/webp'],
-              maximumSizeInBytes: 8 * 1024 * 1024, // 8 MB
-              addRandomSuffix: true,
-              tokenPayload: JSON.stringify({ userId }),
-              callbackUrl,
-            }
-          },
-        })
-        return reply.send(result)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Upload token failed'
-        throw app.httpErrors.badRequest(message)
-      }
+      return { url: blob.url }
     },
   )
 
