@@ -43,7 +43,10 @@ export async function sendSms({
       body: JSON.stringify(payload),
     })
   } catch (err) {
-    throw new Error(`PhilSMS request failed: ${err instanceof Error ? err.message : String(err)}`)
+    throw new Error(
+      `PhilSMS request failed: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    )
   }
 
   const text = await res.text().catch(() => '')

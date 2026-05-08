@@ -1,13 +1,17 @@
 /**
  * Payout math + cooling-off window. The API is intentionally tiny and
  * deterministic so completion handlers stay short and tests don't need a DB.
+ *
+ * Both knobs are env-overridable (PAYOUT_COOLDOWN_HOURS, MIN_PAYOUT_CENTAVOS)
+ * so ops can tune disbursement policy without redeploying code.
  */
+import { env } from '../env.js'
 
 /** Hours a Payout sits in PENDING before becoming eligible for disbursement. */
-export const PAYOUT_COOLDOWN_HOURS = 24
+export const PAYOUT_COOLDOWN_HOURS = env.PAYOUT_COOLDOWN_HOURS ?? 24
 
 /** Minimum batch payout amount (centavos). Smaller balances roll forward. */
-export const MIN_PAYOUT_CENTAVOS = 50_000 // ₱500
+export const MIN_PAYOUT_CENTAVOS = env.MIN_PAYOUT_CENTAVOS ?? 50_000 // ₱500
 
 export interface PayoutSplit {
   grossCentavos: number

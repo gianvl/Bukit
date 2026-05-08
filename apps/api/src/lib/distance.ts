@@ -22,9 +22,13 @@ export function haversineKm(
   return R * c
 }
 
+import { env } from '../env.js'
+
 /**
  * Maximum kilometers between provider and customer for an on-demand match.
- * 35 km comfortably covers all of Metro Manila (Caloocan ↔ Las Piñas
- * diagonal is ≈ 30 km) without bleeding far into Cavite/Bulacan.
+ * Defaults to 35 km — comfortably covers all of Metro Manila (Caloocan ↔
+ * Las Piñas diagonal is ≈ 30 km) without bleeding far into Cavite/Bulacan.
+ *
+ * Overridable at runtime via the `ON_DEMAND_RADIUS_KM` env var (Railway).
  */
-export const ON_DEMAND_RADIUS_KM = 35
+export const ON_DEMAND_RADIUS_KM = env.ON_DEMAND_RADIUS_KM ?? 35

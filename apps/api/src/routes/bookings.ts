@@ -7,6 +7,7 @@ import { refundPayment } from '../lib/paymongo.js'
 import { haversineKm } from '../lib/distance.js'
 import { areaRoom, emitBookingStatus, getIo } from '../lib/socket-server.js'
 import { eligibleAtFrom, splitPayout } from '../lib/payouts.js'
+import { env } from '../env.js'
 
 const BookingStatusEnum = z.enum([
   'PENDING_PAYMENT',
@@ -194,15 +195,18 @@ export const bookingRoutes: FastifyPluginAsyncZod = async (app) => {
 
       // KYC gate: customers must be APPROVED before booking. The frontend
       // mirrors this with a redirect to /kyc, but we still enforce it
-      // server-side so a stale tab can't slip past.
-      const me = await prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: { kycStatus: true },
-      })
-      if (me?.kycStatus !== 'APPROVED') {
-        throw app.httpErrors.unprocessableEntity(
-          'Verify your identity before booking. Open Settings → Verification.',
-        )
+      // server-side so a stale tab can't slip past. Disable in dev/staging
+      // by setting KYC_REQUIRED_FOR_BOOKING=false.
+      if (env.KYC_REQUIRED_FOR_BOOKING) {
+        const me = await prisma.user.findUnique({
+          where: { id: session.user.id },
+          select: { kycStatus: true },
+        })
+        if (me?.kycStatus !== 'APPROVED') {
+          throw app.httpErrors.unprocessableEntity(
+            'Verify your identity before booking. Open Settings → Verification.',
+          )
+        }
       }
 
       const scheduledDate = new Date(scheduledAt)

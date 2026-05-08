@@ -62,8 +62,7 @@ const AdminKycListItem = z.object({
   reviewedAt: z.iso.datetime().nullable(),
 })
 
-const PHOTO_KINDS = ['gov-id', 'selfie'] as const
-type PhotoKind = (typeof PHOTO_KINDS)[number]
+type PhotoKind = 'gov-id' | 'selfie'
 
 function proxyPath(submissionId: string, kind: PhotoKind): string {
   return `/kyc/photo/${submissionId}/${kind}`

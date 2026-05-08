@@ -1,7 +1,13 @@
 import type { BookingStatus } from '@prisma/client'
+import { env } from '../env.js'
 
-/** Three-hour read+write window after a booking completes. */
-export const POST_COMPLETION_WINDOW_MS = 3 * 60 * 60 * 1000
+/**
+ * Read+write window for the customer ↔ provider chat after a booking
+ * completes. Defaults to 3 hours; overridable via the
+ * POST_COMPLETION_CHAT_MS env var.
+ */
+export const POST_COMPLETION_WINDOW_MS =
+  env.POST_COMPLETION_CHAT_MS ?? 3 * 60 * 60 * 1000
 
 interface ChatBooking {
   status: BookingStatus

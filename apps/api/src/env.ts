@@ -40,6 +40,30 @@ const EnvSchema = z.object({
   // /kyc/upload-token endpoint refuses with a clear error so the rest of
   // the API still boots without the integration.
   BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
+
+  /* ─── Marketplace tuning knobs ───────────────────────────────────────
+   * These have sensible defaults in the lib/* modules; ops can override
+   * here without redeploying code (Railway env vars). When unset, the
+   * lib defaults take effect.
+   */
+
+  /** On-demand match radius in km. Default: 35 (covers all of NCR). */
+  ON_DEMAND_RADIUS_KM: z.coerce.number().positive().max(200).optional(),
+  /** Hours a payout sits PENDING before it's eligible for disbursement. */
+  PAYOUT_COOLDOWN_HOURS: z.coerce.number().nonnegative().max(720).optional(),
+  /** Minimum batch size (centavos) for "Request payout". */
+  MIN_PAYOUT_CENTAVOS: z.coerce.number().int().nonnegative().optional(),
+  /** How long after COMPLETED the chat thread stays open. Milliseconds. */
+  POST_COMPLETION_CHAT_MS: z.coerce.number().int().nonnegative().optional(),
+  /**
+   * Hard gate on customer KYC for booking. `true` in production, override
+   * to `false` for local dev or staging environments where you want
+   * unverified accounts to be able to book.
+   */
+  KYC_REQUIRED_FOR_BOOKING: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
 })
 
 const parsed = EnvSchema.safeParse(process.env)

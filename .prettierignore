@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+**/dist
+**/node_modules
+**/.next
+**/.tanstack
+apps/web/src/routeTree.gen.ts
+apps/api/prisma/migrations
+pnpm-lock.yaml

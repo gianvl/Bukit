@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel in-flight runs when a new commit lands on the same branch / PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: lint · typecheck · test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          # Match packageManager pin in root package.json so we don't drift.
+          version: 10.33.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Prisma client generation runs inside @bukit/api's `build` and
+      # `typecheck` scripts, but `test` doesn't trigger it — generate
+      # explicitly so vitest + tsc see fresh types.
+      - name: Generate Prisma client
+        run: pnpm --filter @bukit/api exec prisma generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck (api)
+        run: pnpm --filter @bukit/api exec tsc --noEmit
+
+      # Web uses tsc -b (project references) — matches what Vercel runs
+      # at deploy time, catches errors that --noEmit wouldn't.
+      - name: Typecheck (web)
+        run: pnpm --filter @bukit/web exec tsc -b
+
+      - name: Test
+        run: pnpm test
