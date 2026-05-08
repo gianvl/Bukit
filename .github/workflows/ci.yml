@@ -42,13 +42,11 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Typecheck (api)
-        run: pnpm --filter @bukit/api exec tsc --noEmit
-
-      # Web uses tsc -b (project references) — matches what Vercel runs
-      # at deploy time, catches errors that --noEmit wouldn't.
-      - name: Typecheck (web)
-        run: pnpm --filter @bukit/web exec tsc -b
+      # Use the package's `typecheck` script — it includes `tsr generate`
+      # for the web app (routeTree.gen.ts is gitignored, regenerated at
+      # build time). The api script already runs `prisma generate` first.
+      - name: Typecheck
+        run: pnpm typecheck
 
       - name: Test
         run: pnpm test
