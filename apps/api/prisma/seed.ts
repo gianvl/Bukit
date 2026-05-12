@@ -43,14 +43,31 @@ async function main() {
   const host = url.match(/@([^/]+)/)?.[1] ?? '<unknown>'
   console.log(`Seeding against DB host: ${host}`)
 
+  const cleaning = await prisma.service.upsert({
+    where: { slug: 'cleaning' },
+    create: {
+      slug: 'cleaning',
+      name: 'Cleaning',
+      description: 'Home and condo cleaning services.',
+      iconKey: 'sparkles',
+      sortOrder: 1,
+    },
+    update: {
+      name: 'Cleaning',
+      description: 'Home and condo cleaning services.',
+      iconKey: 'sparkles',
+      sortOrder: 1,
+    },
+  })
+
   for (const tier of TIERS) {
     await prisma.serviceTier.upsert({
       where: { slug: tier.slug },
-      create: tier,
-      update: tier,
+      create: { ...tier, serviceId: cleaning.id },
+      update: { ...tier, serviceId: cleaning.id },
     })
   }
-  console.log(`Seeded ${TIERS.length} service tiers.`)
+  console.log(`Seeded ${TIERS.length} service tiers under "${cleaning.slug}".`)
 }
 
 main()
